@@ -1,0 +1,7 @@
+--TGP PAGE TEMPLATE
+--page is an venv value - Frame
+--(controlled by browser)
+local tgl=require("tgl")
+if not page then return end
+page:add(Text:new("Hello world!",tgl.defaults.colors2.white,Pos2:new(1,1)))
+page:add(Text:new(page.context.text1,tgl.defaults.colors2.white,Pos2:new(2,1)))

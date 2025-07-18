@@ -6,7 +6,7 @@ local asp={}
 asp.defaultPage="index"
 asp.maxContentLength=7168 --7KB
 asp.defaultHeaders={}
-asp.version="0.1"
+asp.version="0.2"
 asp.util={}
 asp.methods={
   GET=true,
@@ -50,6 +50,7 @@ end
 content_length - size of body
 content_type - none or text/tdf/tp file
 location - for 301
+options - ?query
 ]]
 AspRequest={}
 AspRequest.__index=AspRequest
@@ -82,6 +83,7 @@ function AspResponse:new(code,headers,body)
   obj.headers=headers
   obj.body=body
   if not headers["content_length"] then obj.headers.content_length=string.len(body) end
+  if not headers["content_type"] then obj.headers.content_type="text" end
   return obj
 end
 
@@ -110,20 +112,18 @@ function AspResponse.ok(body, headers)
   return AspResponse:new(200, headers, body)
 end
 
-function AspResponse.notFound(body, headers)
+function AspResponse.simple(code,body,headers)
   if not body and not headers then
-    body="404 Not found"
-    headers={
-      content_type="text",
-      ftp=false
-    }
+    body=code.." "..AspResponse.statusCodes[code]
+    headers={}
   end
-  return AspResponse:new(404, headers, body)
+  if not headers then headers={} end
+  return AspResponse:new(code, headers, body)
 end
 
 function AspResponse.redirect(url, status)
   local headers = {location=url}
-  return AspResponse:new(status or 301,headers,{})
+  return AspResponse:new(status or 301,headers,"")
 end
 
 --connection
@@ -208,6 +208,7 @@ function asp.get(path,headers)
   if not state then return false,"unavailable" end
   local req=AspRequest:new("GET",{url=url})
   if not req then return nil end
+  req:addHeaders({options=options})
   req:addHeaders(headers)
   req:addHeaders(asp.defaultHeaders)
   local response=asp.sendRequestResponse(to_ip,req)
