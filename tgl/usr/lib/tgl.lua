@@ -5,7 +5,7 @@ local event=require("event")
 local term=require("term")
 local unicode=require("unicode")
 local tgl={}
-tgl.ver="0.6.08.2"
+tgl.ver="0.6.08.4"
 tgl.debug=true
 tgl.util={}
 tgl.defaults={}
@@ -14,20 +14,20 @@ tgl.defaults.backgroundColor=0x000000
 tgl.defaults.screenSizeX,tgl.defaults.screenSizeY=gpu.getResolution()
 tgl.defaults.colors16={}
 tgl.defaults.colors16["white"]=0xFFFFFF --white
-tgl.defaults.colors16["gold"]=0xFFCC33 --gold
-tgl.defaults.colors16["magenta"]=0xCC66CC --magenta
-tgl.defaults.colors16["lightblue"]=0x6699FF --lightblue
-tgl.defaults.colors16["yellow"]=0xFFFF33 --yellow
-tgl.defaults.colors16["lime"]=0x33CC33 --lime
-tgl.defaults.colors16["pink"]=0xFF6699 --pink
-tgl.defaults.colors16["darkgray"]=0x333333 --darkgray
-tgl.defaults.colors16["lightgray"]=0xCCCCCC --lightgray
-tgl.defaults.colors16["cyan"]=0x336699 --cyan
-tgl.defaults.colors16["purple"]=0x9933CC --purple
-tgl.defaults.colors16["darkblue"]=0x333399 --darkblue
-tgl.defaults.colors16["brown"]=0x663300 --brown
-tgl.defaults.colors16["darkgreen"]=0x336600 --darkgreen
-tgl.defaults.colors16["red"]=0xFF3333 --red
+tgl.defaults.colors16["gold"]=0xFFDB40 --gold FFCC33
+tgl.defaults.colors16["magenta"]=0xCC6DBF --magenta CC66CC
+tgl.defaults.colors16["lightblue"]=0x6692FF --lightblue 6699ff
+tgl.defaults.colors16["yellow"]=0xFFFF40 --yellow FFFF33
+tgl.defaults.colors16["lime"]=0x33DB40 --lime 33cc33
+tgl.defaults.colors16["pink"]=0xFF6D80 --pink FF6699
+tgl.defaults.colors16["darkgray"]=0x2D2D2D --darkgray 333333
+tgl.defaults.colors16["lightgray"]=0xD2D2D2 --lightgray CCCCCC
+tgl.defaults.colors16["cyan"]=0x336D80 --cyan 336699
+tgl.defaults.colors16["purple"]=0x9924BF --purple 9933CC
+tgl.defaults.colors16["darkblue"]=0x332480 --darkblue 333399
+tgl.defaults.colors16["brown"]=0x662400 --brown 663300
+tgl.defaults.colors16["darkgreen"]=0x336D00 --darkgreen 336600
+tgl.defaults.colors16["red"]=0xFF2440 --red ff3333
 tgl.defaults.colors16["black"]=0x000000 --black
 
 tgl.defaults.chars={}
@@ -258,7 +258,7 @@ end
 tgl.defaults.colors2={}
 tgl.defaults.colors2.black=Color2:new(0xFFFFFF,0)
 tgl.defaults.colors2.white=Color2:new(0,0xFFFFFF)
-tgl.defaults.colors2.close=Color2:new(0xFFFFFF,0xFF3333)
+tgl.defaults.colors2.close=Color2:new(0xFFFFFF,tgl.defaults.colors16.red)
 tgl.defaults.colors2.progressbar=Color2:new(tgl.defaults.colors16.lime,0xFFFFFF)
 
 function tgl.changeToColor2(col2,ignore)
@@ -821,6 +821,19 @@ function Bar:disableAll()
     end
   end
 end
+function Bar:add(object,customX,name,customcol)
+  if object.type then
+    object.customX=tonumber(customX)
+    object.customCol2=customcol or nil
+    if not name then
+      table.insert(self.objects,object)
+    else
+      self.objects[name]=object
+    end
+    return true
+  end
+  return false
+end
 
 Frame={}
 Frame.__index=Frame
@@ -1120,9 +1133,9 @@ function ScrollFrame:render()
     if object.type then
       --check if should render
       if object.relpos2 then
-        if object.relpos2.y>self.scroll and object.relpos2.y<self.size2.sizeY+self.scroll then
+        if object.relpos2.y>self.scroll and object.relpos2.y<=self.size2.sizeY+self.scroll then
           --translate
-          object.pos2=Pos2.new(object.relpos2.x+self.size2.x1,object.relpos2.y-self.scroll)
+          object.pos2=Pos2:new(object.relpos2.x+self.size2.x1-1,object.relpos2.y+self.size2.y1-self.scroll-1)
           object:render()
         end
       elseif object.relsize2 then
