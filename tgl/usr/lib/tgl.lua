@@ -5,61 +5,45 @@ local event=require("event")
 local term=require("term")
 local unicode=require("unicode")
 local tgl={}
-tgl.ver="0.6.08.4"
+tgl.ver="0.6.08.5"
 tgl.debug=true
 tgl.util={}
-tgl.defaults={}
-tgl.defaults.foregroundColor=0xFFFFFF
-tgl.defaults.backgroundColor=0x000000
+tgl.defaults={
+  foregroundColor=0xFFFFFF,
+  colors16={},
+  chars={
+    full="█",darkshade="▓",mediumshade="▒",
+    lightshade="░",sqrt="√",check="✔",
+    cross="❌",save="💾",folder="📁",
+    fileempty="🗋",file="🗎",email="📧"
+  },
+  boxes={
+    double="═║╔╗╚╝╠╣╦╩╬",
+    signle="─│┌┐└┘├┤┬┴┼",
+    round= "─│╭╮╰╯├┤┬┴┼"
+  },
+  keys={
+    backspace=8,delete=127,null=0,
+    enter=13,space=32,ctrlz=26,
+    ctrlc=3,ctrlv=22,esc=27
+  }
+}
+if gpu.getDepth()==8 then
+  tgl.defaults.colors16={
+    white=0xFFFFFF,gold=0xFFDB40,magenta=0xCC6DBF,lightblue=0X6692FF,
+    yellow=0xFFFF00,lime=0x00FF00,pink=0xFF6D80,darkgray=0x2D2D2D,
+    lightgray=0xD2D2D2,cyan=0x336D80,purple=0x9924BF,darkblue=0x332480,
+    brown=0x662400,darkgreen=0x336D00,red=0xFF0000,black=0x0
+  }
+else
+  tgl.defaults.colors16={
+    white=0xFFFFFF,gold=0xFFCC33,magenta=0xCC66CC,lightblue=0x6699FF,
+    yellow=0xFFFF33,lime=0x33CC33,pink=0xFF6699,darkgray=0x333333,
+    lightgray=0xCCCCCC,cyan=0x336699,purple=0x9933CC,darkblue=0x333399,
+    brown=0x663300,darkgreen=0x336600,red=0xFF3333,black=0x0
+  }
+end
 tgl.defaults.screenSizeX,tgl.defaults.screenSizeY=gpu.getResolution()
-tgl.defaults.colors16={}
-tgl.defaults.colors16["white"]=0xFFFFFF --white
-tgl.defaults.colors16["gold"]=0xFFDB40 --gold FFCC33
-tgl.defaults.colors16["magenta"]=0xCC6DBF --magenta CC66CC
-tgl.defaults.colors16["lightblue"]=0x6692FF --lightblue 6699ff
-tgl.defaults.colors16["yellow"]=0xFFFF40 --yellow FFFF33
-tgl.defaults.colors16["lime"]=0x33DB40 --lime 33cc33
-tgl.defaults.colors16["pink"]=0xFF6D80 --pink FF6699
-tgl.defaults.colors16["darkgray"]=0x2D2D2D --darkgray 333333
-tgl.defaults.colors16["lightgray"]=0xD2D2D2 --lightgray CCCCCC
-tgl.defaults.colors16["cyan"]=0x336D80 --cyan 336699
-tgl.defaults.colors16["purple"]=0x9924BF --purple 9933CC
-tgl.defaults.colors16["darkblue"]=0x332480 --darkblue 333399
-tgl.defaults.colors16["brown"]=0x662400 --brown 663300
-tgl.defaults.colors16["darkgreen"]=0x336D00 --darkgreen 336600
-tgl.defaults.colors16["red"]=0xFF2440 --red ff3333
-tgl.defaults.colors16["black"]=0x000000 --black
-
-tgl.defaults.chars={}
-tgl.defaults.chars.full="█"
-tgl.defaults.chars.darkshade="▓"
-tgl.defaults.chars.mediumshade="▒"
-tgl.defaults.chars.lightshade="░"
-tgl.defaults.chars.sqrt="√"
-tgl.defaults.chars.check="✔"
-tgl.defaults.chars.cross="❌"
-tgl.defaults.chars.save="💾"
-tgl.defaults.chars.folder="📁"
-tgl.defaults.chars.fileempty="🗋"
-tgl.defaults.chars.file="🗎"
-tgl.defaults.chars.email="📧"
-
-tgl.defaults.boxes={}
-tgl.defaults.boxes.double="═║╔╗╚╝╠╣╦╩╬"
-tgl.defaults.boxes.signle="─│┌┐└┘├┤┬┴┼"
-tgl.defaults.boxes.round= "─│╭╮╰╯├┤┬┴┼"
-
-tgl.defaults.keys={}
-tgl.defaults.keys.backspace=8
-tgl.defaults.keys.delete=127
-tgl.defaults.keys.null=0
-tgl.defaults.keys.enter=13
-tgl.defaults.keys.space=32
-tgl.defaults.keys.ctrlz=26
-tgl.defaults.keys.ctrlv=22
-tgl.defaults.keys.ctrlc=3
-tgl.defaults.keys.esc=27
-
 tgl.sys={}
 tgl.sys.enableTypes={Button=true,EventButton=true,CheckBox=true,InputField=true,ScrollFrame=true}
 tgl.sys.enableAllTypes={Frame=true,Bar=true,ScrollFrame=true}
@@ -417,12 +401,10 @@ function Text:render(noNextLine)
   return true
 end
 function Text:updateText(text)
-  if type(text)=="string" or type(text)=="number" then
-    self.text=tgl.util.strgen(" ",unicode.wlen(self.text))
-    self:render()
-    self.text=text
-    self:render()
-  end
+  self.text=tgl.util.strgen(" ",unicode.wlen(self.text))
+  self:render()
+  self.text=tostring(text)
+  self:render()
 end
 
 MultiText={}
