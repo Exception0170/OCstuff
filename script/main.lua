@@ -103,6 +103,21 @@ function lex(source)
     elseif string.sub(source, i, i + 1) == "//" then
       table.insert(tokens, Token.new("T_OPERATOR", "//"))
       i = i + 2
+    elseif string.sub(source, i, i + 1) == "+=" then
+      table.insert(tokens, Token.new("T_OPERATOR", "+="))
+      i = i + 2
+    elseif string.sub(source, i, i + 1) == "-=" then
+      table.insert(tokens, Token.new("T_OPERATOR", "-="))
+      i = i + 2
+    elseif string.sub(source, i, i + 1) == "/=" then
+      table.insert(tokens, Token.new("T_OPERATOR", "/="))
+      i = i + 2
+    elseif string.sub(source, i, i + 1) == "*=" then
+      table.insert(tokens, Token.new("T_OPERATOR", "*="))
+      i = i + 2
+    elseif string.sub(source, i, i + 1) == "%=" then
+      table.insert(tokens, Token.new("T_OPERATOR", "%="))
+      i = i + 2
     elseif char == "%" then
       table.insert(tokens, Token.new("T_OPERATOR", "%"))
       i = i + 1
@@ -273,7 +288,7 @@ function parse(tokens)
 
   function consume(expectedType, errorMessage)
       if not match(expectedType) then
-          error("Expected " .. expectedType .. ", got " .. (peek() and peek().type or "EOF") .. (errorMessage and (": " .. errorMessage) or ""))
+        error("Expected " .. expectedType .. ", got " .. (peek() and peek().type or "EOF") .. (errorMessage and (": " .. errorMessage) or ""))
       end
       return next_token()
   end
@@ -340,29 +355,6 @@ function parse_primary()
     else
         error("Unexpected token in expression: " .. (token and token.type or "EOF"))
     end
-end
-  function parse_expression()
-      local left = parse_primary()
-      while match("T_OPERATOR") or match("T_DOT") or match("T_LSQUARE") or match("T_LPAREN") do
-          if match("T_OPERATOR") then
-            local operator = next_token().value
-            local right = parse_primary()
-            left = AST.BinaryExpression(operator, left, right)
-           elseif match("T_LSQUARE") then
-            next_token() -- Consume the '['
-            local index = parse_expression()
-            consume("T_RSQUARE", "Expected ']' to close table index")
-            left =  AST.TableAccess(left, index)
-          elseif match("T_DOT") then
-            consume("T_DOT", "Expected '.'")
-            local property = consume("T_IDENTIFIER", "Expected identifier after '.'").value
-            left = AST.TableAccess(left, property) --Creates inline object
-          elseif match("T_LPAREN") then
-            print("parsing function?",left.name)
-            left=parse_function_call(left)
-          end
-      end
-      return left
   end
 
   function parse_block()
@@ -406,32 +398,83 @@ end
       return AST.IfStatement(condition, thenBlock, elseifBlocks, elseBlock)
   end
 
-  function parse_assignment_statement()
-    local target_token = consume("T_IDENTIFIER", "Expected identifier as assignment target")
-    local target=nil
-    if match("T_LSQUARE") then
-      next_token()
-      local index=parse_expression()
-      consume("T_RSQUARE","Expected ']' to close table index")
-      target=AST.TableAccess(target_token,index)
-    else
-      target = AST.Identifier(target_token.value)
+  function parse_expression()
+    local left = parse_primary()
+    while (match("T_OPERATOR") and peek().value~="=" and peek().value~="+=" and
+    peek().value~='-=' and peek().value~='/=' and peek().value~='*=' and peek().value~='%=')
+    or match("T_DOT") or match("T_LSQUARE") or match("T_LPAREN") do
+        if match("T_OPERATOR") then
+          local operator = next_token().value
+          local right = parse_primary()
+          left = AST.BinaryExpression(operator, left, right)
+        elseif match("T_LSQUARE") then
+          next_token() -- Consume the '['
+          local index = parse_expression()
+          consume("T_RSQUARE", "Expected ']' to close table index")
+          left =  AST.TableAccess(left, index)
+        elseif match("T_DOT") then
+          print("dot!")
+          consume("T_DOT", "Expected '.'")
+          local property = consume("T_IDENTIFIER", "Expected identifier after '.'").value
+          left = AST.TableAccess(left, AST.StringLiteral(property)) --Creates inline object
+        elseif match("T_LPAREN") then
+          print("parsing function?",left.type)
+          left=parse_function_call(left)
+        end
     end
-    consume("T_OPERATOR", "Expected '=' in assignment")
-    local value = parse_expression()
-    -- if match("T_LPAREN") then --function
-    --   next_token()
-    --   local args={parse_expression()} --no
-    --   while match("T_COMMA") do next_token() table.insert(args,parse_expression())end
-    --   consume("T_RPAREN","Expected ')' to close function call")
-    --   value=AST.FunctionCall(value,args)
-    -- end
-    -- consume("T_SEMICOLON", "Expected ';' after assignment")
-    return AST.Assignment(target, value)
+    return left
   end
+
+  function parse_assignment_statement()
+    local target = parse_expression()
+    print(target.type)
+    local op=consume("T_OPERATOR","Expected '=' in assignment!")
+    local value = parse_expression()
+    if op.value=="=" then
+      return AST.Assignment(target, value)
+    elseif op.value=="+=" or op.value=="-=" or op.value=="/=" or op.value=="*=" or op.value=="%=" then
+      return AST.Assignment(target,AST.BinaryExpression(string.sub(op.value,1,1),target,value))
+    else
+      --error("Invalid operator for assignment: "..op.value)
+      --do nothing!
+    end
+  end
+  -- function parse_function_definition()
+  --   consume("T_FUNCTION", "Expected 'function' keyword")
+  --   local name = consume("T_IDENTIFIER", "Expected function name").value
+  --   consume("T_LPAREN", "Expected '(' after function name")
+  --   local parameters = {}
+  --   if not match("T_RPAREN") then
+  --       repeat
+  --           local paramName = consume("T_IDENTIFIER", "Expected parameter name").value
+  --           table.insert(parameters, paramName)
+  --           if match("T_COMMA") then
+  --               consume("T_COMMA", "Expected comma between parameters")
+  --           end
+  --       until not match("T_IDENTIFIER")
+  --   end
+  --   consume("T_RPAREN", "Expected ')' after parameters")
+  --   local body = parse_block()
+  --   return AST.FunctionDefinition(name, parameters, body)
+  -- end
   function parse_function_definition()
     consume("T_FUNCTION", "Expected 'function' keyword")
-    local name = consume("T_IDENTIFIER", "Expected function name").value
+    local name = nil
+    if match("T_IDENTIFIER") then
+        local base = consume("T_IDENTIFIER", "Expected function name or table name").value
+        if match("T_DOT") then
+            consume("T_DOT", "Expected '.' after table name")
+            local property = consume("T_IDENTIFIER", "Expected function name").value
+            -- Create a TableAccess node
+            name = AST.TableAccess({type = "Identifier", name = base}, {type = "StringLiteral", value = property})
+        else
+            -- If no dot, it's a regular function
+            name = AST.Identifier(base)
+        end
+    else
+        error("Expected function name or table.function name")
+    end
+
     consume("T_LPAREN", "Expected '(' after function name")
     local parameters = {}
     if not match("T_RPAREN") then
@@ -445,6 +488,7 @@ end
     end
     consume("T_RPAREN", "Expected ')' after parameters")
     local body = parse_block()
+
     return AST.FunctionDefinition(name, parameters, body)
   end
   function parse_statement()
@@ -454,7 +498,11 @@ end
     if token.type == "T_IF" then
       return parse_if_statement()
     elseif token.type == "T_IDENTIFIER" or token.type == "T_LSQUARE" then
-      if tokens[i+1].type=="T_LPAREN" then
+      -- local j=i+1
+      -- while tokens[j].type~="T_OPERATOR" and tokens[j].type~="T_LPAREN" do j=j+1 print(j,token[j].type)end
+      -- if tokens[j].type=="T_LPAREN" then
+      --   parse_function_call()
+      if tokens[i+1].type=="T_LPAREN" then --fix?
         local ident=parse_primary()
         return parse_function_call(ident)
       else
@@ -623,8 +671,13 @@ function create_interpreter()
       end
       return table
     elseif node.type == "FunctionDefinition" then
-      env[node.name]=node --store function
-      return nil
+      if node.name.type=="Identifier" then
+        env[node.name.name]=node --store function
+        return nil
+      elseif node.name.type=="TableAccess" then
+        --eval?
+        env[node.name.base.name][node.name.index.value]=node
+      end
     elseif node.type == "FunctionCall" then
       local func=env[node.name]
       if type(func)=="function" then --system call
@@ -663,7 +716,7 @@ function create_interpreter()
       local left = evaluate(node.left)
       local right = evaluate(node.right)
       if node.operator == "+" then
-        return left + right
+        return left + right--str
       elseif node.operator == "-" then
         return left - right
       elseif node.operator == "*" then
@@ -692,10 +745,18 @@ function create_interpreter()
     elseif node.type == "Identifier" then
       return env[node.name]
     elseif node.type == "TableAccess" then
-      return env[node.base.name][node.index.value]
+      local base = evaluate(node.base) -- Evaluate the base expression FIRST
+       if type(base) ~= "table" then
+            error("Attempt to index a non-table value")
+          end
+      local index = evaluate(node.index)
+      if type(index) ~="number" and type(index) ~="string" then
+        error("Table index must be a string or a number")
+      end
+      return base[index]
     elseif node.type == "Assignment" then
       if node.target.type=="TableAccess" then
-        env[node.target.base.value][node.target.index.value]=evaluate(node.value)
+        evaluate(node.target.base)[node.target.index.value]=evaluate(node.value)
       elseif node.target.type=="Identifier" then
         env[node.target.name] = evaluate(node.value)
       end
@@ -738,13 +799,11 @@ end
 
 -- Example Usage (assuming you have the lexer and Token defined)
 local source_code = [[
-function a(){
-  function b(){
-    return 1
-  }
-  return b()
-}
-print(a())
+m={}
+function f(){print(2)}
+function m.func(){print(1)}
+f()
+//m.func()
 ]]
 local start_time=os.clock()
 local tokens = lex(source_code)
@@ -753,20 +812,20 @@ for _, token in ipairs(tokens) do
 end
 local ast = parse(tokens)
 print_ast(ast)
+print("---Parse time: "..tostring((os.clock()-start_time)*1000).."ms")
+start_time=os.clock()
 local eval,env=create_interpreter()
-print("---Time: "..tostring((os.clock()-start_time)*1000).."ms")
 print("---Program Output----")
 eval(ast)
-print("---------------------")
-print(env["a"])
+print("---Execution time: "..tostring((os.clock()-start_time)*1000).."ms")
+print(env["m"]["func"])
 
 --[[
-TODO
-fix table access
-+=
-custom env
+TODO (ordered)
 m.functions
-include(modName)
+elseif
 more system functions(main,string,table etc)
+include(modName)
+custom env
 web3 libs
 ]]
