@@ -1,9 +1,10 @@
 local tmg=require("tgl-img")
 local tgl=require("tgl")
-
+local term=require("term")
 local function help()
   local helpmsg=[[TMG Image viewer
   Simply give it a file name and it will print an image.
+  Press any key to close it afterwards.
   Supported image format: .tmg
   Usage: tmgview <filename>
   ]]
@@ -13,11 +14,24 @@ end
 local function view(filename)
   local file=io.open(filename)
   if not file then
-    local pre=tgl.changeToColor2(Color2:new(0,tgl.defaults.colors16.red),false)
-    print("Couldn't open file: "..filename)
-    tgl.changeToColor2(pre,true)
+    tgl.cprint("Couldn't open file: "..filename)
+    return
   end
-  Image:load(filename):render()
+  local img=Image:load(filename)
+  if not img then
+    tgl.cprint("Couldn't open image")
+    return
+  end
+  term.clear()
+  img:render()
+  require("event").pull("key_down")
+  term.clear()
+  tgl.cprint("Image stats",Color2:new(tgl.defaults.colors16.yellow))
+  print("Name: "..img.name)
+  print("Shape: "..img.size2.sizeX.."x"..img.size2.sizeY.."("..img.size2.sizeX.."x"..(img.size2.sizeY*2)..")")
+  print("Color depth: "..img.depth.."bit")
+  print("Extended: "..tostring(img.extended))
+  print("")
 end
 
 local args=require("shell").parse(...)
