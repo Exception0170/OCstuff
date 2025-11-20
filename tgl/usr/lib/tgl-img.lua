@@ -297,7 +297,7 @@ function Image:save(filename) --save to .tmg
     rawdata,compRLE,compDiff=tmg.autoCompress(self.rawdata)
   else rawdata=self.rawdata end
   file:write("tmg\n")
-  file:write(tmg.collectFlags(self.depth,compRLE,compDiff,self.extended))
+  file:write(tmg.collectFlags(self.depth,compRLE,compDiff,self.extended).."\n")
   file:write(self.name.."\n")
   file:write(tostring(self.size2.sizeX).."\n")
   file:write(tostring(self.size2.sizeY).."\n")
