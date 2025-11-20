@@ -2,12 +2,32 @@ local bit32=require("bit32")
 local term=require("term")
 local tgl=require("tgl")
 local tmg={}
-tmg.ver="1.1"
+tmg.ver="1.2"
 tmg.enableCompressing=true --Enable compressing when saving?
 tmg.cache={} --TODO: add cache for frequent colors
 
 --UTILS
 tmg.char="▀"
+tmg.chars={}
+tmg.chars[0]=""
+tmg.chars[1]=tmg.char
+tmg.chars[128]="█"
+tmg.chars[129]="▓"
+tmg.chars[130]="▒"
+tmg.chars[131]="▄"
+tmg.chars[132]="▖"
+tmg.chars[132]="▗"
+tmg.chars[132]="▘"
+tmg.chars[132]="▝"
+
+function tmg.getExtendedChar(byte)
+  if byte<128 then return string.char(byte)
+  else
+    if tmg.chars[byte] then return tmg.chars[byte]
+    else return "" end
+  end
+end
+
 function tmg.collectFlags(depth,compRLE,compDiff,extended)
   if depth==4 then depth=0 else depth=1 end
   if compRLE==true then compRLE=1 else compRLE=0 end
@@ -265,6 +285,11 @@ function Image:preload()
         return false
       end
       local c
+      local char=tmg.char
+      if self.extended==true then
+        char=tmg.getExtendedChar(self.rawdata(pos))
+        pos=pos+1
+      end
       if self.depth==4 then
         c=tmg.byteToCol2(self.rawdata:byte(pos))
         pos=pos+1
@@ -272,7 +297,7 @@ function Image:preload()
         c=tmg.bytesToCol2(self.rawdata:byte(pos),self.rawdata:byte(pos+1))
         pos=pos+2
       end
-      table.insert(self.data,Text:new(tmg.char,c,Pos2:new(x+ix-1,y+iy-1)))
+      table.insert(self.data,Text:new(char,c,Pos2:new(x+ix-1,y+iy-1)))
     end
   end
   self.preloaded=true
@@ -334,13 +359,14 @@ function Image:render()
     return true
   end
   --rawrender
-  local function writePixel(x,y,col2)
+  local function writePixel(x,y,col2,char)
+    if not char then char=tmg.char end
     if not tgl.util.pointInSize2(x,y,self.size2) then
       tgl.util.log("Trying to write in bad point: ("..x..","..y..") "..tgl.util.objectInfo(self.size2),"Image/render")
     end
     tgl.changeToColor2(col2)
     term.setCursor(x,y)
-    term.write(tmg.char)
+    term.write(char)
   end
   if not self.rawdata then return false end
   local pos=1
@@ -355,6 +381,11 @@ function Image:render()
         break
       end
       local c
+      local char=tmg.char
+      if self.extended==true then
+        char=tmg.getExtendedChar(self.rawdata(pos))
+        pos=pos+1
+      end
       if self.depth==4 then
         c=tmg.byteToCol2(self.rawdata:byte(pos))
         pos=pos+1
@@ -362,7 +393,7 @@ function Image:render()
         c=tmg.bytesToCol2(self.rawdata:byte(pos),self.rawdata:byte(pos+1))
         pos=pos+2
       end
-      writePixel(x+ix-1,y+iy-1,c)
+      writePixel(x+ix-1,y+iy-1,c,char)
     end
   end
   term.setCursor(saved_x,saved_y)
