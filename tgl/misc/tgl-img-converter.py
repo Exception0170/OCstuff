@@ -283,6 +283,7 @@ class TMGConverter:
                 # Header
                 f.write(b"tmg\n")
                 f.write(self.collect_flags(depth, final_rle, final_diff, extended))
+                f.write("\n".encode())
                 f.write(f"{name}\n".encode())
                 f.write(f"{width}\n".encode())
                 f.write(f"{height}\n".encode())
