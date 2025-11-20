@@ -5,7 +5,7 @@ local event=require("event")
 local term=require("term")
 local unicode=require("unicode")
 local tgl={}
-tgl.ver="0.6.08.5"
+tgl.ver="0.6.08.6"
 tgl.debug=true
 tgl.util={}
 tgl.defaults={
@@ -255,6 +255,10 @@ function tgl.changeToColor2(col2,ignore)
   end
   gpu.setForeground(col2[1])
   gpu.setBackground(col2[2])
+end
+
+function tgl.getCurrentColor2()
+  return Color2:new(gpu.getForeground(),gpu.getBackground())
 end
 
 Pos2={}
