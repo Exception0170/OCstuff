@@ -2,7 +2,7 @@ local bit32=require("bit32")
 local term=require("term")
 local tgl=require("tgl")
 local tmg={}
-tmg.ver="1.2"
+tmg.ver="1.2.2"
 tmg.enableCompressing=true --Enable compressing when saving?
 tmg.cache={} --TODO: add cache for frequent colors
 
@@ -352,10 +352,14 @@ function Image:load(filename,pos2)
 end
 
 function Image:render()
+  local saved_x,saved_y=term.getCursor()
+  local saved_col2=tgl.getCurrentColor2()
   if self.preloaded then
     for i,pixel in ipairs(self.data) do
       pixel:render()
     end
+    term.setCursor(saved_x,saved_y)
+    tgl.changeToColor2(saved_col2,true)
     return true
   end
   --rawrender
@@ -371,7 +375,6 @@ function Image:render()
   if not self.rawdata then return false end
   local pos=1
   local maxpos=#self.rawdata
-  local saved_x,saved_y=term.getCursor()
   local x=self.size2.x1
   local y=self.size2.y1
   for iy=1,self.size2.sizeY do
@@ -397,6 +400,7 @@ function Image:render()
     end
   end
   term.setCursor(saved_x,saved_y)
+  tgl.changeToColor2(saved_col2,true)
   return true
 end
 return tmg
