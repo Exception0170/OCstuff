@@ -5,11 +5,12 @@ local event=require("event")
 local term=require("term")
 local unicode=require("unicode")
 local tgl={}
-tgl.ver="0.6.08.6"
+tgl.ver="0.6.09"
 tgl.debug=true
 tgl.util={}
 tgl.defaults={
   foregroundColor=0xFFFFFF,
+  backgroundColor=0,
   colors16={},
   chars={
     full="█",darkshade="▓",mediumshade="▒",
@@ -240,6 +241,7 @@ function Color2:new(col1,col2)
 end
 
 tgl.defaults.colors2={}
+tgl.defaults.colors2.error=Color2:new(tgl.defaults.colors16.red,0)
 tgl.defaults.colors2.black=Color2:new(0xFFFFFF,0)
 tgl.defaults.colors2.white=Color2:new(0,0xFFFFFF)
 tgl.defaults.colors2.close=Color2:new(0xFFFFFF,tgl.defaults.colors16.red)
@@ -259,6 +261,13 @@ end
 
 function tgl.getCurrentColor2()
   return Color2:new(gpu.getForeground(),gpu.getBackground())
+end
+
+function tgl.cprint(text,col2)
+  if not col2 then col2=tgl.defaults.colors2.error end
+  local p=tgl.changeToColor2(col2,false)
+  print(text)
+  tgl.changeToColor2(p,true)
 end
 
 Pos2={}
