@@ -118,6 +118,10 @@ function tgl.util.printColors16(nextLine)
   end
   if not nextLine then term.write("\n") end
 end
+---Gets line of desired length starting at pos2
+---@param pos2 Pos2
+---@param len integer
+---@return string
 function tgl.util.getLine(pos2,len)
   local s=""
   for i=1,len+1 do

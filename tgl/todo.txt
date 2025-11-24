@@ -1,6 +1,7 @@
 0.7
 update tgl-img
 finish tgl-ui
+update cmtui, zirnox
 
 
 fix scrollframe
