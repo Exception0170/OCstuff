@@ -1,35 +1,44 @@
---Tui Graphics Library
+---Tui Graphics Library
+---@version 0.7.0
+---@diagnostic disable: return-type-mismatch
 local gpu=require("component").gpu
 local thread=require("thread")
 local event=require("event")
 local term=require("term")
 local unicode=require("unicode")
 local tgl={}
-tgl.ver="0.6.09"
+tgl.ver="0.7.0"
 tgl.debug=true
+tgl.logfile="" --file to log
+---Utility methods
 tgl.util={}
+---Frequently used symbols, colors
 tgl.defaults={
   foregroundColor=0xFFFFFF,
   backgroundColor=0,
+  ---4bit color palette
   colors16={},
+  ---Frequently used characters
   chars={
     full="█",darkshade="▓",mediumshade="▒",
     lightshade="░",sqrt="√",check="✔",
     cross="❌",save="💾",folder="📁",
     fileempty="🗋",file="🗎",email="📧"
   },
+  ---For box art
   boxes={
     double="═║╔╗╚╝╠╣╦╩╬",
     signle="─│┌┐└┘├┤┬┴┼",
     round= "─│╭╮╰╯├┤┬┴┼"
   },
+  ---Key values for input reading
   keys={
     backspace=8,delete=127,null=0,
     enter=13,space=32,ctrlz=26,
     ctrlc=3,ctrlv=22,esc=27
   }
 }
-if gpu.getDepth()==8 then
+if gpu.getDepth()==8 then --different bitdepth results in different 16 colors palette
   tgl.defaults.colors16={
     white=0xFFFFFF,gold=0xFFDB40,magenta=0xCC6DBF,lightblue=0X6692FF,
     yellow=0xFFFF00,lime=0x00FF00,pink=0xFF6D80,darkgray=0x2D2D2D,
@@ -46,12 +55,17 @@ else
 end
 tgl.defaults.screenSizeX,tgl.defaults.screenSizeY=gpu.getResolution()
 tgl.sys={}
+---Classes with :enable() and :disable() methods
 tgl.sys.enableTypes={Button=true,EventButton=true,CheckBox=true,InputField=true,ScrollFrame=true}
+---Classes with :enableAll() and :disableAll() methods 
 tgl.sys.enableAllTypes={Frame=true,Bar=true,ScrollFrame=true}
+---Classes with :open() and :close() methods
 tgl.sys.openTypes={Frame=true,ScrollFrame=true}
-
-tgl.sys.activeArea=nil --setup later
-
+---Active area at screen which defines where elements are interactable
+---@type Size2|nil
+tgl.sys.activeArea=nil
+---Sets new active area
+---@param size2 Size2
 function tgl.sys.setActiveArea(size2)
   if size2.type=="Size2" then
     tgl.sys.activeArea=size2
@@ -66,6 +80,8 @@ function tgl.sys.resetActiveArea()
   tgl.sys.activeArea=Size2:newFromSize(1,1,tgl.defaults.screenSizeX,tgl.defaults.screenSizeY)
 end
 
+---@param pos2 Pos2
+---@param size2 Size2
 function tgl.util.pos2InSize2(pos2,size2)
   if size2.type~="Size2" or pos2.type~="Pos2" then return false end
   if pos2.x>=size2.x1 and pos2.x<=size2.x2 and
@@ -77,21 +93,30 @@ function tgl.util.pointInSize2(x,y,size2)
   if x>=size2.x1 and x<=size2.x2 and y>=size2.y1 and y<= size2.y2 then return true 
   else return false end
 end
+---@param text string
+---@param mod? string module name(default=MAIN)
 function tgl.util.log(text,mod)
   if tgl.debug then
     local c=require("component")
+    local s="["..require("computer").uptime().."][TGL]["..mod.."] "..text
     if c.isAvailable("ocelot") then
       if not mod then mod="MAIN" end
-      c.ocelot.log("["..require("computer").uptime().."][TGL]["..mod.."] "..text)
+      c.ocelot.log(s)
+    elseif tgl.logfile~="" then
+      local file=io.open(tgl.logfile,"a")
+      if file then
+        file:write(s.."\n")
+        file:close()
+      end
     end
   end
 end
-function tgl.util.printColors16(noNextLine)
+function tgl.util.printColors16(nextLine)
   for name,col in pairs(tgl.defaults.colors16) do
-    Text:new(name,Color2:new(col)):render(noNextLine)
-    if noNextLine then term.write(" ") end
+    Text:new(name,Color2:new(col)):render(nextLine)
+    if not nextLine then term.write(" ") end
   end
-  if noNextLine then term.write("\n") end
+  if not nextLine then term.write("\n") end
 end
 function tgl.util.getLine(pos2,len)
   local s=""
@@ -101,7 +126,11 @@ function tgl.util.getLine(pos2,len)
   end
   return s
 end
+---@param pos2 Pos2
+---@param text string
+---@param col2? Color2
 function tgl.util.getLineMatched(pos2,text,col2)
+  --checks if line at pos2 is matches text[and same color as col2]
   if type(pos2)~="table" then return end
   if not text then return end
   local matched=0
@@ -124,13 +153,6 @@ function tgl.util.getLineMatched(pos2,text,col2)
     end
   end
   return matched
-end
-function tgl.util.strgen(char,num)
-  local s=""
-  for i=1,num do
-    s=s..char
-  end
-  return s
 end
 
 function tgl.util.objectInfo(object)
@@ -225,8 +247,13 @@ function tgl.util.getProperties(obj,ignore)
   return res
 end
 
+---Color object, 1st elem is foreground color, 2nd is background color
+---@class Color2
 Color2={}
 Color2.__index=Color2
+---@param col1? integer foreground color
+---@param col2? integer background color
+---@return Color2
 function Color2:new(col1,col2)
   if not col1 then col1=tgl.defaults.foregroundColor end
   if not col2 then col2=tgl.defaults.backgroundColor end
@@ -240,6 +267,7 @@ function Color2:new(col1,col2)
   return nil
 end
 
+---Frequently used Color2 objects
 tgl.defaults.colors2={}
 tgl.defaults.colors2.error=Color2:new(tgl.defaults.colors16.red,0)
 tgl.defaults.colors2.black=Color2:new(0xFFFFFF,0)
@@ -247,10 +275,20 @@ tgl.defaults.colors2.white=Color2:new(0,0xFFFFFF)
 tgl.defaults.colors2.close=Color2:new(0xFFFFFF,tgl.defaults.colors16.red)
 tgl.defaults.colors2.progressbar=Color2:new(tgl.defaults.colors16.lime,0xFFFFFF)
 
+---Gets current cursor color2
+---@return Color2
+function tgl.getCurrentColor2()
+  return Color2:new(gpu.getForeground(),gpu.getBackground())
+end
+
+---Changes cursor color to given Color2
+---@param col2 Color2
+---@param ignore? boolean if function should ignore previous color
+---@return Color2|false|nil
 function tgl.changeToColor2(col2,ignore)
   if not col2 then return false end
   if not ignore then
-    local old=Color2:new(gpu.getForeground(),gpu.getBackground())
+    local old=tgl.getCurrentColor2()
     gpu.setForeground(col2[1])
     gpu.setBackground(col2[2])
     return old
@@ -259,10 +297,8 @@ function tgl.changeToColor2(col2,ignore)
   gpu.setBackground(col2[2])
 end
 
-function tgl.getCurrentColor2()
-  return Color2:new(gpu.getForeground(),gpu.getBackground())
-end
-
+---Colored print function
+---@param col2? Color2 default: tgl.defaults.colors2.error
 function tgl.cprint(text,col2)
   if not col2 then col2=tgl.defaults.colors2.error end
   local p=tgl.changeToColor2(col2,false)
@@ -270,15 +306,24 @@ function tgl.cprint(text,col2)
   tgl.changeToColor2(p,true)
 end
 
+---2D Position object
+---@class Pos2
+---@field type string
+---@field x integer
+---@field y integer
 Pos2={}
 Pos2.__index=Pos2
+
+---@param x? integer
+---@param y? integer
+---@return Pos2
 function Pos2:new(x,y)
   if not x then x=1 end
   if not y then y=1 end
   x=tonumber(x)
   y=tonumber(y)
   if x and y then
-    if x>0 and y>0 and x<161 and y<100 then
+    if x>0 and y>0 and x<161 and y<=100 then
       local obj=setmetatable({},Pos2)
       obj.type="Pos2"
       obj[1]=x
@@ -291,6 +336,10 @@ function Pos2:new(x,y)
   return nil
 end
 
+---Set cursor to Pos2
+---@param pos2 Pos2
+---@param ignore? boolean if set to false|nil, returns previous cursor Pos2
+---@param offsetX? integer offset x from pos2 
 function tgl.changeToPos2(pos2,ignore,offsetX)
   if not pos2 then return false end
   if not offsetX then offsetX=0 end
@@ -302,13 +351,28 @@ function tgl.changeToPos2(pos2,ignore,offsetX)
   term.setCursor(pos2.x+offsetX,pos2.y)
 end
 
+---Size2 class defines BoxObject's position and size
+---@class Size2
+---@field type string
+---@field x1 integer
+---@field x2 integer
+---@field y1 integer
+---@field y2 integer
+---@field pos1 Pos2
+---@field pos2 Pos2
+---@field sizeX integer
+---@field sizeY integer
 Size2={}
 Size2.__index=Size2
+---Creates Size2 from 4 coordinates
+---@param x1 integer
+---@param y1 integer
+---@param x2 integer
+---@param y2 integer
+---@return Size2
 function Size2:newFromPoint(x1,y1,x2,y2)
-  if not x1 then x1=1 end
-  if not y1 then y1=1 end
-  if not x2 then x2=10 end
-  if not y2 then y2=10 end
+  if type(x1)~="number" or type(x2)~="number"
+  or type(y1)~="number" or type(y2)~="number" then return nil end
   local pos1=Pos2:new(x1,y1)
   local pos2=Pos2:new(x2,y2)
   if pos1 and pos2 then
@@ -326,6 +390,10 @@ function Size2:newFromPoint(x1,y1,x2,y2)
   end
   return nil
 end
+---Creates Size2 from two Pos2
+---@param pos1 Pos2 top left
+---@param pos2 Pos2 bottom right
+---@return Size2
 function Size2:newFromPos2(pos1,pos2)
   if pos1.type and pos2.type then
     local obj=setmetatable({},Size2)
@@ -342,6 +410,12 @@ function Size2:newFromPos2(pos1,pos2)
   end
   return nil
 end
+---Creates Size2 from a point and sizes
+---@param x integer
+---@param y integer
+---@param sizeX integer
+---@param sizeY integer
+---@return Size2
 function Size2:newFromSize(x,y,sizeX,sizeY)
   local pos1=Pos2:new(x,y)
   if pos1 and tonumber(sizeX) and tonumber(sizeY) then
@@ -357,6 +431,7 @@ function Size2:newFromSize(x,y,sizeX,sizeY)
     obj.pos2=Pos2:new(obj.x2,obj.y2)
     return obj
   end
+  return nil
 end
 function Size2:moveToPos2(pos2)
   if not pos2 then return false end
@@ -368,10 +443,15 @@ function Size2:moveToPos2(pos2)
   self.pos2=Pos2:new(self.x2,self.y2)
   return true
 end
-function Size2:new(x,y,sizeX,sizeY)--alias for Size2:newFromSize()
+---alias for Size2:newFromSize()
+function Size2:new(x,y,sizeX,sizeY)
   return Size2:newFromSize(x,y,sizeX,sizeY)
 end
 
+---Fills area with char
+---@param size2 Size2
+---@param col2 Color2
+---@param char? string default is space
 function tgl.fillSize2(size2,col2,char)
   if not size2 then tgl.util.log("no size2 given","fillSize2") return end
   if not char then char=" " end
@@ -380,51 +460,92 @@ function tgl.fillSize2(size2,col2,char)
   tgl.changeToColor2(prev,true)
 end
 
-Text={}
+---Base for TGL UI objects
+---@class UIObject
+---@field type string
+---@field hidden boolean if object is hidden
+---@field new function(self,...):UIObject Constructor
+---@field render function Render function
+UIObject={}
+UIObject.__index=UIObject
+
+---Base for all single-line objects
+---@class LineObject:UIObject
+---@field pos2 Pos2
+---@field col2 Color2
+LineObject=setmetatable({},{__index=UIObject})
+LineObject.__index=LineObject
+
+---Base for all single-line interactable objects
+---@class LineObjectInteractable:LineObject
+---@field enabled boolean If object is active
+---@field enable function Enable object
+---@field disable function Disable object
+---@field checkRendered boolean Check if object is actually rendered(default=true)
+LineObjectInteractable=setmetatable({},{__index=LineObject})
+LineObjectInteractable.__index=LineObjectInteractable
+
+---Single line text object
+---@class Text:LineObject
+---@field text string
+---@field maxLength integer Max text length, -1 for unlimeted
+Text=setmetatable({},{__index=LineObject})
 Text.__index=Text
+
+---@param text string
+---@param col2? Color2
+---@param pos2? Pos2
+---@return Text
 function Text:new(text,col2,pos2)
   local obj=setmetatable({},Text)
   obj.type="Text"
   obj.text=text
   obj.col2=col2 or Color2:new()
-  obj.pos2=pos2 or nil
-  obj.maxLength=-1 -- -1 for unlimited
+  obj.pos2=pos2 or nil --Intended: pos2 can be nil, text will displayed on current cursor pos
+  obj.maxLength=-1
   return obj
 end
-function Text:render(noNextLine)
+
+---@param nextLine? boolean change to next line after rendering
+function Text:render(nextLine)
   if self.maxLength>=0 then
     if unicode.wlen(self.text)>self.maxLength then
       if self.maxLength>4 then
-        self.text=unicode.sub(self.text,1,self.maxLength-3).."..."
+        self.text=unicode.sub(self.text,1,self.maxLength-2)..".."
       else
         self.text=unicode.sub(self.text,1,self.maxLength)
       end
     end
   end
-  if self.hidden then return false end
+  if self.hidden then return end
   local prev=tgl.changeToColor2(self.col2)
   if not self.pos2 then
     term.write(self.text)
     tgl.changeToColor2(prev,true)
-    if not noNextLine then term.write("\n") end
+    if nextLine then term.write("\n") end
     return true
   end
   gpu.set(self.pos2.x,self.pos2.y,self.text)
   tgl.changeToColor2(prev,true)
   return true
 end
+---Clear text field and render new text
 function Text:updateText(text)
-  self.text=tgl.util.strgen(" ",unicode.wlen(self.text))
+  self.text=string.rep(" ",unicode.wlen(self.text))
   self:render()
   self.text=tostring(text)
   self:render()
 end
 
+---A special object to store multiple Text objects and render at same time
+---@class MultiText:UIObject
+---@field objects Text[]
+---@field pos2 Pos2
 MultiText={}
 MultiText.__index=MultiText
 function MultiText:new(objects,pos2)
   if type(objects)=="table" then
-    local obj=setmetatable({},MultiText)
+    local obj=setmetatable({},self)
     obj.type="MultiText"
     obj.objects={}
     for k,object in pairs(objects) do
@@ -440,6 +561,7 @@ function MultiText:new(objects,pos2)
   end
 end
 function MultiText:render()
+  if self.hidden then return end
   local startX=self.pos2.x
   for _,object in pairs(self.objects) do
     if object.pos2 then object:render()
@@ -451,15 +573,28 @@ function MultiText:render()
   end
 end
 
-Button={}
+---Single-line text button, runs callback function
+---@class Button:LineObjectInteractable
+---@field callback function Function to run on click
+---@field text string
+---@field handler function Button handler, main button logic(is set by default)
+---@field onClick function handles graphic like color change on press
+Button=setmetatable({},{__index=LineObjectInteractable})
 Button.__index=Button
+---@param text string
+---@param callback function
+---@param pos2? Pos2
+---@param color2? Color2
+---@return Button
 function Button:new(text,callback,pos2,color2)
-  local obj=setmetatable({},Button)
+  ---@type Button
+  local obj=setmetatable({},self)
   obj.type="Button"
   obj.text=text or "[New Button]"
   if type(callback)~="function" then
   	callback=function() tgl.util.log("Empty Button!","Button/callback") end
   end
+  obj.enabled=false
   obj.callback=callback
   obj.pos2=pos2 or Pos2:new()
   obj.col2=color2 or Color2:new()
@@ -497,27 +632,29 @@ function Button:new(text,callback,pos2,color2)
   return obj
 end
 function Button:enable()
+  self.enabled=true
   event.listen("touch",self.handler)
 end
 function Button:disable()
+  self.enabled=false
   event.ignore("touch",self.handler)
 end
 function Button:render()
-  if self.hidden then return false end
+  if self.hidden then return end
   local prev=tgl.changeToColor2(self.col2)
   gpu.set(self.pos2.x,self.pos2.y,self.text)
   tgl.changeToColor2(prev,true)
 end
 
-EventButton={}
-EventButton.__index=EventButton
-function EventButton:new(text,eventName,pos2,col2)
-  local obj=setmetatable({},EventButton)
-  obj.type="EventButton"
-  obj.text=text or "[EventButton]"
-  obj.eventName=eventName or "newEvent"
-  obj.pos2=pos2 or Pos2:new()
-  obj.col2=col2 or Color2:new()
+---Makes a Button which fires an eventName event with callValue value
+---@param text string
+---@param eventName string Event name to push
+---@param callValue? any Value to push event with
+---@param pos2 Pos2?
+---@param col2 Color2?
+---@return Button
+function tgl.EventButton(text,eventName,callValue,pos2,col2)
+  local obj=Button:new(text,function()end,pos2,col2)
   obj.handler=function(_,_,x,y)
     if x>=obj.pos2.x
     and x<obj.pos2.x+unicode.wlen(obj.text)
@@ -531,93 +668,26 @@ function EventButton:new(text,eventName,pos2,col2)
       if type(obj.onClick)=="function" then
         thread.create(obj.onClick):detach()
       end
-      event.push(obj.eventName)
+      event.push(eventName,callValue)
     end
   end
-  obj.onClick=function()
-    obj:disable()
-    local invert=Color2:new(obj.col2[2],obj.col2[1])
-    local prev=obj.col2
-    obj.col2=invert
-    obj:render()
-    obj.col2=prev
-    os.sleep(.1)
-    obj:render()
-    obj:enable()
-  end
+  obj.callback=nil
   return obj
 end
-function EventButton:enable()
-  event.listen("touch",self.handler)
-end
-function EventButton:disable()
-  event.ignore("touch",self.handler)
-end
-function EventButton:render()
-  if self.hidden then return false end
-  local prev=tgl.changeToColor2(self.col2)
-  gpu.set(self.pos2.x,self.pos2.y,self.text)
-  tgl.changeToColor2(prev,true)
-end
 
-CheckBox={}
-CheckBox.__index=CheckBox
-function CheckBox:new(pos2,col2,width,char)
-  local obj=setmetatable({},CheckBox)
-  obj.type="CheckBox"
-  obj.pos2=pos2 or Pos2:new()
-  obj.col2=col2 or Color2:new()
-  obj.char=char or "*"
-  obj.value=false
-  obj.width=width or 1
-  obj.text=tgl.util.strgen(" ",1)
-  obj.handler=function(_,_,x,y)
-    if x>=obj.pos2.x
-    and x<obj.pos2.x+unicode.wlen(obj.text)
-    and y==obj.pos2.y
-    and tgl.util.pointInSize2(x,y,tgl.sys.activeArea) then
-      if obj.checkRendered then
-        if tgl.util.getLineMatched(obj.pos2,obj.text,obj.col2)/unicode.wlen(obj.text)<0.6 then
-          return
-        end
-      end
-      obj:toggle()
-    end
-  end
-  return obj
-end
-function CheckBox:enable()
-  event.listen("touch",self.handler)
-end
-function CheckBox:disable()
-  event.ignore("touch",self.handler)
-end
-function CheckBox:render()
-  if self.hidden then return false end
-  local prev=tgl.changeToColor2(self.col2)
-  gpu.set(self.pos2.x,self.pos2.y,self.text)
-  tgl.changeToColor2(prev,true)
-end
-function CheckBox:toggle()
-  self:disable()
-  if self.value==true then
-    self.value=false
-    self.text=tgl.util.strgen(" ",self.width)
-  else
-    self.value=true
-    local size=math.floor((self.width-unicode.wlen(self.char))/2)
-    local size2=math.ceil((self.width-unicode.wlen(self.char))/2)
-    self.text=tgl.util.strgen(" ",size)..self.char..tgl.util.strgen(" ",size2)
-  end
-  self:render()
-  os.sleep(.5)
-  self:enable()
-end
-
-InputField={}
+---One-line text input
+---@class InputField:LineObjectInteractable
+---@field defaultText string Default display string
+---@field eventName string Event to push after input is done
+---@field charCol2 Color2 Cursor Color2, uses background color(default - lime)
+---@field erase boolean If erase field after input is done
+---@field secret boolean If use password protection
+---@field handler function Function is called on user click
+InputField=setmetatable({},{__index=LineObjectInteractable})
 InputField.__index=InputField
 function InputField:new(text,pos2,col2)
-  local obj=setmetatable({},InputField)
+  ---@type InputField
+  local obj=setmetatable({},self)
   obj.type="InputField"
   obj.text=""
   obj.secret=false
@@ -654,6 +724,7 @@ function InputField:new(text,pos2,col2)
   end
   return obj
 end
+---InputField input function
 function InputField:input()
   local prev=tgl.changeToPos2(self.pos2)
   local prevCol=tgl.changeToColor2(self.col2)
@@ -668,7 +739,8 @@ function InputField:input()
     if self.text=="" then gpu.fill(self.pos2.x,self.pos2.y,unicode.wlen(self.defaultText)+1,1," ") offsetX=0
     else offsetX=unicode.wlen(self.text) end
   end
-  function printChr()
+  ---@private
+  local function printChr()
     printChar.pos2=Pos2:new(self.pos2.x+offsetX,self.pos2.y)
     printChar:render()
   end
@@ -722,36 +794,20 @@ function InputField:disable()
   event.ignore("touch",self.handler)
 end
 
-Progressbar={}
-Progressbar.__index=Progressbar
-function Progressbar:new(pos2,len,col2)
-  local obj=setmetatable({},Progressbar)
-  obj.type="Progressbar"
-  obj.pos2=pos2 or Pos2:new()
-  obj.len=tonumber(len) or 10
-  obj.col2=col2 or tgl.defaults.colors2.progressbar
-  obj.text=tgl.util.strgen(" ",obj.len)
-  obj.value=0 --percentage
-  return obj
-end
-function Progressbar:render()
-  local fill=math.floor(self.len*self.value)
-  self.text=tgl.util.strgen(tgl.defaults.chars.full,fill)..tgl.util.strgen(" ",self.len-fill)
-  local prev=tgl.changeToColor2(self.col2)
-  gpu.set(self.pos2.x,self.pos2.y,self.text)
-  tgl.changeToColor2(prev,true)
-end
-function Progressbar:setValue(num,render)
-  if not tonumber(num) then return false end
-  if num>1 or num<0 then return false end
-  self.value=num
-  if render then self:render() end
-end
-
-Bar={}
+---One-line Bar object, for menus.
+---If you use objectColor2, LineObjects can have boolean customCol2 to keep object's col2.
+---LineObjects can also have integer customX for positioning.
+---@deprecated
+---@class Bar:LineObject
+---@field objects LineObject[]
+---@field objectColor2 Color2|nil Recolor objects
+---@field space integer Space between objects(when automatic positioning)
+---@field sizeX integer Bar length
+---@field centerMode boolean WIP, default=false
+Bar=setmetatable({},{__index=LineObject})
 Bar.__index=Bar
 function Bar:new(pos2,objects,col2,objDefaultCol2)
-  local obj=setmetatable({},Bar)
+  local obj=setmetatable({},self)
   obj.type="Bar"
   obj.pos2=pos2 or Pos2:new()
   obj.col2=col2 or Color2:new()
@@ -830,10 +886,27 @@ function Bar:add(object,customX,name,customcol)
   return false
 end
 
-Frame={}
+---Base BoxObject
+---@class BoxObject:UIObject
+---@field size2 Size2
+---@field col2 Color2
+BoxObject=setmetatable({},{__index=UIObject})
+BoxObject.__index=BoxObject
+
+---2D Box frame
+---@class Frame:BoxObject
+---@field objects UIObject[] Objects can have relpos2 field, represents their position inside the frame
+---@field borderType string Frame border type(inline/outline, default=inline)
+---@field borders string|nil
+---@field translate function
+---@field enableAll function
+---@field disableAll function
+---@field open function
+---@field close function
+Frame=setmetatable({},{__index=BoxObject})
 Frame.__index=Frame
 function Frame:new(objects,size2,col2)
-  local obj=setmetatable({},Frame)
+  local obj=setmetatable({},self)
   obj.type="Frame"
   obj.objects=objects or {}
   obj.size2=size2 or Size2:newFromSize(1,1,tgl.defaults.screenSizeX,tgl.defaults.screenSizeY)
@@ -843,7 +916,8 @@ function Frame:new(objects,size2,col2)
   obj:translate()
   return obj
 end
-function Frame:translate() --move object from relative positions to absolute ones in frame
+---move objects from relative positions to absolute ones in frame
+function Frame:translate()
   for _,object in pairs(self.objects) do
     if object.type then
       if object.type~="Frame" and object.type~="ScrollFrame" then
@@ -860,7 +934,7 @@ function Frame:translate() --move object from relative positions to absolute one
         else
           tgl.util.log("Corrupted object! Type: "..tostring(object.type),"Frame/translate")
         end
-      else
+      else ---WIP
         if not object.relsize2 then object.relsize2=Size2:newFromPos2(object.size2.pos1,object.size2.pos2) end
         local t_pos2=object.relsize2.pos1
         if t_pos2 then
@@ -927,6 +1001,8 @@ function Frame:render()
     end
   end
 end
+---Move frame and all its contents
+---@param pos2 Pos2
 function Frame:moveToPos2(pos2)
   if not pos2 then return false end
   self.size2:moveToPos2(pos2)
@@ -948,6 +1024,10 @@ function Frame:disableAll()
     end
   end
 end
+---Add an object to frame(with translating)
+---@param object UIObject
+---@param name string
+---@return boolean
 function Frame:add(object,name)
   if object.type then
     if not name then
@@ -960,6 +1040,8 @@ function Frame:add(object,name)
   end
   return false
 end
+---comment
+---@param elem integer|string object name
 function Frame:remove(elem)
   if tonumber(elem) then
     table.remove(self.objects,tonumber(elem))
@@ -968,8 +1050,14 @@ function Frame:remove(elem)
   end
 end
 
-ScreenSave={}
+---Saves a box from screen
+---@class ScreenSave:BoxObject
+---@field data table
+---@field save function
+---@field dump function
+ScreenSave=setmetatable({},{__index=BoxObject})
 ScreenSave.__index=ScreenSave
+---Save the chars from self.size2 to self.data
 function ScreenSave:save()
   for x=self.size2.x1,self.size2.x2 do
     self.data[x]={}
@@ -998,6 +1086,9 @@ function ScreenSave:render()
     end
   end
 end
+---Dump saved data to file
+---@param filename? string default=screensave.st
+---@return boolean
 function ScreenSave:dump(filename)
   if not filename then filename="screensave.st" end
   local file=io.open(filename,"w")
@@ -1008,6 +1099,7 @@ function ScreenSave:dump(filename)
   file:write(require("serialization").serialize({self.size2.x1,self.size2.y1,self.size2.x2,self.size2.y2}))
   file:write("\n")
   file:write(require("serialization").serialize(self.data)):close()
+  return true
 end
 function ScreenSave:load(filename)
   if not filename then filename="screensave.st" end
@@ -1033,6 +1125,9 @@ function ScreenSave:load(filename)
   return nil
 end
 
+---Display the frame, enableAll.
+---if object has ignoreOpen=true, then it is not opened recursively
+---@param ignore_ss? boolean Ignore saving screen behind frame
 function Frame:open(ignore_ss)
   self.hidden=false
   if not ignore_ss then self.ss=ScreenSave:new(self.size2) end
@@ -1044,6 +1139,7 @@ function Frame:open(ignore_ss)
   self:render()
   self:enableAll()
 end
+---Closes frame and disableAll. If screensave was stored, displayes saved screen
 function Frame:close()
   self.hidden=true
   self:disableAll()
@@ -1055,6 +1151,13 @@ function Frame:close()
   end
 end
 
+---WIP Scrollable Frame
+---@class ScrollFrame:Frame
+---@field showScroll boolean NotImplemented: Show scrollbar(default=true)
+---@field scroll integer Current scroll
+---@field handler function
+---@field enable function
+---@field disable function 
 ScrollFrame={}
 ScrollFrame.__index=ScrollFrame
 function ScrollFrame:new(objects,size2,col2)
@@ -1165,52 +1268,11 @@ function ScrollFrame:disableAll()
     end
   end
 end
-
-function tgl.defaults.window(size2,title,barcol,framecol)
-  if not size2 then return nil end
-  if not title then title="Untitled" end
-  if not barcol then barcol=Color2:new(0xFFFFFF,tgl.defaults.colors16.lightblue) end
-  if not framecol then framecol=tgl.defaults.colors2.white end
-  local close_button=EventButton:new(" X ","close"..title,Pos2:new(),tgl.defaults.colors2.close)
-  close_button.customCol2=true
-  close_button.customX=size2.sizeX-2
-  local title_text=Text:new(title,barcol)
-  title_text.customX=(size2.sizeX-unicode.wlen(title))/2
-  local topbar=Bar:new(Pos2:new(1,1),{title_text=title_text,close_button=close_button},barcol,barcol)
-  local frame=Frame:new({topbar=topbar},size2,framecol)
-  return frame
-end
-function tgl.defaults.window_outlined(size2,title,borders,barcol,framecol)
-  if not size2 then return nil end
-  if not title then title="Untitled" end
-  if not borders then borders=tgl.defaults.boxes.signle end
-  if not barcol then barcol=Color2:new(0xFFFFFF,tgl.defaults.colors16.lightblue) end
-  if not framecol then framecol=tgl.defaults.colors2.white end
-  local close_button=EventButton:new(" X ","close"..title,Pos2:new(),tgl.defaults.colors2.close)
-  close_button.customCol2=true
-  close_button.customX=size2.sizeX-2
-  local title_text=Text:new(title,barcol)
-  title_text.customX=(size2.sizeX-unicode.wlen(title))/2
-  local topbar=Bar:new(Pos2:new(1,1),{title_text=title_text,close_button=close_button},barcol,barcol)
-  local frame=Frame:new({topbar=topbar},size2,framecol)
-  frame.borders=borders
-  return frame
-end
-function tgl.defaults.notificationWindow(size2,title,text,barcol,framecol)
-  if not size2 then return nil end
-  if not title then title="Untitled" end
-  if not barcol then barcol=Color2:new(0xFFFFFF,tgl.defaults.colors16.lightblue) end
-  if not framecol then framecol=tgl.defaults.colors2.white end
-  local close_button=EventButton:new(" OK ","close"..title,Pos2:new((size2.sizeX-4)/2,size2.sizeY-1),Color2:new(0xFFFFFF,tgl.defaults.colors16.lightblue))
-  local info_icon=Text:new("i",Color2:new(0xFFFFFF,tgl.defaults.colors16.darkblue),Pos2:new((size2.sizeX-unicode.wlen(text))/2-2,3))
-  local text_label=Text:new(text,framecol,Pos2:new((size2.sizeX-unicode.wlen(text))/2,3))
-  local title_text=Text:new(title,barcol)
-  title_text.customX=(size2.sizeX-unicode.wlen(title))/2
-  local topbar=Bar:new(Pos2:new(1,1),{title_text=title_text},barcol,barcol)
-  local frame=Frame:new({topbar=topbar,icon=info_icon,text=text_label,close_button=close_button},size2,framecol)
-  return frame
+function ScrollFrame:add(object,name)
+  --NotImplemented
 end
 
+---WIP Object dumps to text
 tgl.dump={}
 function tgl.dump.encodeObject(obj)
   if not obj then return nil end
@@ -1373,8 +1435,3 @@ end
 tgl.sys.resetActiveArea()
 tgl.util.log("TGL version "..tgl.ver.." loaded")
 return tgl
---types of objects
---[[
-linear
-sized
-]]
