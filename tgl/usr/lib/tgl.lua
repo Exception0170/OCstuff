@@ -55,11 +55,11 @@ else
 end
 tgl.defaults.screenSizeX,tgl.defaults.screenSizeY=gpu.getResolution()
 tgl.sys={}
----Classes with :enable() and :disable() methods
+---Classes with `:enable()` and `:disable()` methods
 tgl.sys.enableTypes={Button=true,EventButton=true,CheckBox=true,InputField=true,ScrollFrame=true}
----Classes with :enableAll() and :disableAll() methods 
+---Classes with `:enableAll()` and `:disableAll()` methods 
 tgl.sys.enableAllTypes={Frame=true,Bar=true,ScrollFrame=true}
----Classes with :open() and :close() methods
+---Classes with `:open()` and `:close()` methods
 tgl.sys.openTypes={Frame=true,ScrollFrame=true}
 ---Active area at screen which defines where elements are interactable
 ---@type Size2|nil
@@ -94,7 +94,7 @@ function tgl.util.pointInSize2(x,y,size2)
   else return false end
 end
 ---@param text string
----@param mod? string module name(default=MAIN)
+---@param mod? string module name(default=`"MAIN"`)
 function tgl.util.log(text,mod)
   if tgl.debug then
     local c=require("component")
@@ -130,11 +130,11 @@ function tgl.util.getLine(pos2,len)
   end
   return s
 end
+---Checks if line at pos2 is matches text[and same color as col2, if given]
 ---@param pos2 Pos2
 ---@param text string
 ---@param col2? Color2
 function tgl.util.getLineMatched(pos2,text,col2)
-  --checks if line at pos2 is matches text[and same color as col2]
   if type(pos2)~="table" then return end
   if not text then return end
   local matched=0
@@ -302,7 +302,7 @@ function tgl.changeToColor2(col2,ignore)
 end
 
 ---Colored print function
----@param col2? Color2 default: tgl.defaults.colors2.error
+---@param col2? Color2 default: `tgl.defaults.colors2.error`
 function tgl.cprint(text,col2)
   if not col2 then col2=tgl.defaults.colors2.error end
   local p=tgl.changeToColor2(col2,false)
@@ -342,7 +342,7 @@ end
 
 ---Set cursor to Pos2
 ---@param pos2 Pos2
----@param ignore? boolean if set to false|nil, returns previous cursor Pos2
+---@param ignore? boolean if set to `false|nil`, returns previous cursor Pos2
 ---@param offsetX? integer offset x from pos2 
 function tgl.changeToPos2(pos2,ignore,offsetX)
   if not pos2 then return false end
@@ -447,7 +447,7 @@ function Size2:moveToPos2(pos2)
   self.pos2=Pos2:new(self.x2,self.y2)
   return true
 end
----alias for Size2:newFromSize()
+---alias for `Size2:newFromSize()`
 function Size2:new(x,y,sizeX,sizeY)
   return Size2:newFromSize(x,y,sizeX,sizeY)
 end
@@ -547,6 +547,9 @@ end
 ---@field pos2 Pos2
 MultiText={}
 MultiText.__index=MultiText
+---@param objects Text[]
+---@param pos2? Pos2
+---@return MultiText|UIObject
 function MultiText:new(objects,pos2)
   if type(objects)=="table" then
     local obj=setmetatable({},self)
@@ -900,7 +903,7 @@ BoxObject.__index=BoxObject
 ---2D Box frame
 ---@class Frame:BoxObject
 ---@field objects UIObject[] Objects can have relpos2 field, represents their position inside the frame
----@field borderType string Frame border type(inline/outline, default=inline)
+---@field borderType string Frame border type(`"inline"/"outline"`, default=`"inline"`)
 ---@field borders string|nil
 ---@field translate function
 ---@field enableAll function
@@ -909,6 +912,10 @@ BoxObject.__index=BoxObject
 ---@field close function
 Frame=setmetatable({},{__index=BoxObject})
 Frame.__index=Frame
+---@param objects UIObject[]
+---@param size2? Size2
+---@param col2? Color2
+---@return Frame
 function Frame:new(objects,size2,col2)
   local obj=setmetatable({},self)
   obj.type="Frame"
@@ -1030,7 +1037,7 @@ function Frame:disableAll()
 end
 ---Add an object to frame(with translating)
 ---@param object UIObject
----@param name string
+---@param name? string
 ---@return boolean
 function Frame:add(object,name)
   if object.type then
@@ -1061,7 +1068,7 @@ end
 ---@field dump function
 ScreenSave=setmetatable({},{__index=BoxObject})
 ScreenSave.__index=ScreenSave
----Save the chars from self.size2 to self.data
+---Save the chars from `self.size2` region to `self.data`
 function ScreenSave:save()
   for x=self.size2.x1,self.size2.x2 do
     self.data[x]={}
@@ -1091,7 +1098,7 @@ function ScreenSave:render()
   end
 end
 ---Dump saved data to file
----@param filename? string default=screensave.st
+---@param filename? string default=`"screensave.st"`
 ---@return boolean
 function ScreenSave:dump(filename)
   if not filename then filename="screensave.st" end
@@ -1130,7 +1137,7 @@ function ScreenSave:load(filename)
 end
 
 ---Display the frame, enableAll.
----if object has ignoreOpen=true, then it is not opened recursively
+---if object has `ignoreOpen=true`, then it is not opened recursively
 ---@param ignore_ss? boolean Ignore saving screen behind frame
 function Frame:open(ignore_ss)
   self.hidden=false
