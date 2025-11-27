@@ -662,6 +662,8 @@ end
 ---@return Button
 function tgl.EventButton(text,eventName,callValue,pos2,col2)
   local obj=Button:new(text,function()end,pos2,col2)
+  obj.eventName=eventName
+  obj.callValue=callValue
   obj.handler=function(_,_,x,y)
     if x>=obj.pos2.x
     and x<obj.pos2.x+unicode.wlen(obj.text)
@@ -675,7 +677,7 @@ function tgl.EventButton(text,eventName,callValue,pos2,col2)
       if type(obj.onClick)=="function" then
         thread.create(obj.onClick):detach()
       end
-      event.push(eventName,callValue)
+      event.push(obj.eventName,obj.callValue)
     end
   end
   obj.callback=nil
@@ -902,7 +904,7 @@ BoxObject.__index=BoxObject
 
 ---2D Box frame
 ---@class Frame:BoxObject
----@field objects UIObject[] Objects can have relpos2 field, represents their position inside the frame
+---@field objects table<string|integer, table> Objects can have relpos2 field, represents their position inside the frame
 ---@field borderType string Frame border type(`"inline"/"outline"`, default=`"inline"`)
 ---@field borders string|nil
 ---@field translate function
@@ -912,7 +914,7 @@ BoxObject.__index=BoxObject
 ---@field close function
 Frame=setmetatable({},{__index=BoxObject})
 Frame.__index=Frame
----@param objects UIObject[]
+---@param objects table<string|integer, UIObject|LineObject|BoxObject>
 ---@param size2? Size2
 ---@param col2? Color2
 ---@return Frame
@@ -1051,7 +1053,7 @@ function Frame:add(object,name)
   end
   return false
 end
----comment
+---Remove an object
 ---@param elem integer|string object name
 function Frame:remove(elem)
   if tonumber(elem) then

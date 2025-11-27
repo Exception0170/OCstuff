@@ -1,4 +1,5 @@
 local tgl=require("tgl")
+local tui=require("tgl-ui")
 local term=require("term")
 local gpu=require("component").gpu
 local event=require("event")
@@ -6,7 +7,7 @@ local mnp=require("cmnp")
 local ip=require("ipv2")
 local filename="/etc/.cm_last_netuuid"
 --setup values
-local version="1.3"
+local version="1.4"
 local blue=Color2:new(0xFFFFFF,tgl.defaults.colors16.darkblue)
 local gray=Color2:new(0,tgl.defaults.colors16.lightgray)
 local red=Color2:new(tgl.defaults.colors16.red,0xFFFFFF)
@@ -26,6 +27,7 @@ local notify_size=Size2:new(7,8,25,5)
 --functions
 local function savePrevAddress(name)
   local file=io.open(filename,"w")
+  if not file then return end
   file:write(name)
   file:close()
 end
@@ -37,7 +39,7 @@ local function loadPrevAddress()
   return name
 end
 function notify(msg)
-  local notify_frame=tgl.defaults.notificationWindow(notify_size,"CMTUI",msg,blue,gray)
+  local notify_frame=tui.notificationWindow(notify_size,"CMTUI",msg,blue,gray)
   notify_frame.objects.text.col2=gray
   notify_frame.objects.close_button.eventName="cmtui_close_notif"
   tgl.sys.setActiveArea(notify_size)
@@ -49,7 +51,7 @@ function notify(msg)
   tgl.sys.resetActiveArea()
 end
 function getpassword()
-  local window=tgl.defaults.notificationWindow(notify_size,"CMTUI","Enter password",blue,gray)
+  local window=tui.notificationWindow(notify_size,"CMTUI","Enter password",blue,gray)
   if not window then return end
   window.objects.icon.relpos2.y=2
   window.objects.text.relpos2.y=2
@@ -66,7 +68,7 @@ function getpassword()
   return pass
 end
 function getdomain(allow_ipv2)
-  local window=tgl.defaults.notificationWindow(notify_size,"CMTUI","Enter domain",blue,gray)
+  local window=tui.notificationWindow(notify_size,"CMTUI","Enter domain",blue,gray)
   if not window then return end
   window.objects.icon.relpos2.y=2
   window.objects.text.relpos2.y=2
@@ -142,8 +144,8 @@ connect_frame:add(CheckBox:new(Pos2:new(19,5),checkboxcol,1,"*"),"static_checkbo
 connect_frame:add(Text:new("Use static IPv2",white,Pos2:new(3,5)))
 connect_frame:add(Text:new("Selected:",white,Pos2:new(2,4)))
 connect_frame:add(Text:new("loading..",white,Pos2:new(12,4)),"netname")
-connect_frame:add(EventButton:new("Connect","cmtui_connect",Pos2:new(4,6),gray),"connect_button")
-connect_frame:add(EventButton:new("Cancel","cmtui_connect_cancel",Pos2:new(13,6),tgl.defaults.colors2.close),"cancel_button")
+connect_frame:add(tgl.EventButton("Connect","cmtui_connect",nil,Pos2:new(4,6),gray),"connect_button")
+connect_frame:add(tgl.EventButton("Cancel","cmtui_connect_cancel",nil,Pos2:new(13,6),tgl.defaults.colors2.close),"cancel_button")
 connect_frame.objects.input.eventName="cmtui_connect_name"
 local connecting_frame=Frame:new({},Size2:new(2,8,25,2),gray)
 connecting_frame:add(Text:new("Connecting:",gray,Pos2:new(1,1)))
@@ -361,15 +363,15 @@ local menu_frame=Frame:new({},Size2:new(2,2,app_size_x-1,app_size_y-1),white)
 menu_frame:add(Text:new("Connection  Manager",white,Pos2:new(5,2)))
 menu_frame:add(Text:new("Text User Interface",white,Pos2:new(5,3)))
 menu_frame:add(Text:new("Version: "..version,white,Pos2:new(5,4)))
-menu_frame:add(Button:new("Status",function() event.push("cmtui_open","status_frame") end,Pos2:new(3,6),white),"status_button")
-menu_frame:add(Button:new("Connect",function() event.push("cmtui_open","connect_frame") end,Pos2:new(3,7),white),"connect_button")
+menu_frame:add(tgl.EventButton("Status","cmtui_open","status_frame",Pos2:new(3,6),white),"status_button")
+menu_frame:add(tgl.EventButton("Connect","cmtui_open","connect_frame",Pos2:new(3,7),white),"connect_button")
 menu_frame:add(Button:new("Disconnect",disconnect,Pos2:new(15,7),white),"disconnect_button")
 menu_frame:add(Button:new("Reconnect",reconnect,Pos2:new(3,8),white),"reconnect_button")
 menu_frame:add(Button:new("Set Domain",setdomain,Pos2:new(15,8),white),"setdomain_button")
 menu_frame:add(Button:new("Ping Node",nping,Pos2:new(3,9),white),"nping_button")
 menu_frame:add(Button:new("Ping Client",cping,Pos2:new(15,9),white),"cping_button")
 function menu_frame:main() end
-local window=tgl.defaults.window_outlined(app_size,"CMTUI",tgl.defaults.boxes.double)
+local window=tui.window_outlined(app_size,"CMTUI",tgl.defaults.boxes.double)
 window:add(menu_frame,"menu_frame")
 window:add(status_frame,"status_frame")
 window:add(connect_frame,"connect_frame")
@@ -392,7 +394,7 @@ while true do
 end
 back_frame:disableAll()
 os.sleep(.1)
-tgl.changeToColor2(tgl.defaults.colors2.black)
+tgl.changeToColor2(tgl.defaults.colors2.black,true)
 term.clear()
 --[[
 window -> frame1
