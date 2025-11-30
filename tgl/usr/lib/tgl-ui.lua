@@ -323,17 +323,48 @@ function tui.selectFile(size2,startFolder,startFile,allowFolder)
     else file_frame.maxScroll=0 end
     file_frame.scroll=0
     file_frame:render()
+    updateSelectedText()
   end
-  local refresh_button=Button:new("Refresh",function()file_frame:render() updateSelectedText() end,
+
+  local new_frame=tui.window(Size2:new(math.floor((size2.sizeX-20)/2),math.floor(size2.sizeY/2),20,5),"New file")
+  new_frame:add(Text:new("Adding new file",tgl.defaults.colors2.white,Pos2:new(2,2)))
+  new_frame:add(InputField:new("[ enter filename]",Pos2:new(2,3),filebg_col),"input")
+  new_frame:add(Text:new("Directory:",tgl.defaults.colors2.white,Pos2:new(4,4)))
+  new_frame:add(CheckBox:new(Pos2:new(14,4),Color2:new(tgl.defaults.colors16.darkgreen,
+  tgl.defaults.colors16.lightgray),2,tgl.defaults.chars.check),"checkbox")
+  new_frame:add(tgl.EventButton("[Submit]","tgl_file_new_submit",nil,
+  Pos2:new(6,5),Color2:new(0xFFFFFF,tgl.defaults.colors16.lightblue)),"submit")
+  new_frame.objects.topbar.objects.close_button.onClick=nil
+  new_frame.objects.submit.onClick=nil
+  new_frame.ignoreOpen=true
+  new_frame.hidden=true
+
+  local function getNewFile()
+    local prev_aa=tgl.sys.getActiveArea()
+    tgl.sys.setActiveArea(new_frame.size2)
+    new_frame:open(true) --ignore because file_frame will be rerendered
+    local id=event.pullMultiple("tgl_file_new_submit","closeNew file")
+    local text=new_frame.objects.input.text
+    local isdir=new_frame.objects.checkbox.value
+    new_frame:close()
+    new_frame.objects.input.text=""
+    new_frame.objects.checkbox.value=false
+    tgl.sys.setActiveArea(prev_aa)
+    if id=="tgl_file_new_submit" then
+      return fs.concat(current_dir,text),isdir
+    else return nil end
+  end
+
+  local new_button=tgl.EventButton("[New]","tui_file_new",nil,
   Pos2:new(1,size2.sizeY),tgl.defaults.colors2.white)
   local submit_button=tgl.EventButton("[Submit]","tui_file_submit","",
-  Pos2:new((size2.sizeX-17)/2,size2.sizeY),Color2:new(0,tgl.defaults.colors16.lime))
+  Pos2:new((size2.sizeX-17)/2,size2.sizeY),Color2:new(0xFFFFFF,tgl.defaults.colors16.lightblue))
   local cancel_button=tgl.EventButton("[Cancel]","tui_file_cancel","",
-  Pos2:new((size2.sizeX-17)/2+9,size2.sizeY),Color2:new(0,tgl.defaults.colors16.red))
+  Pos2:new((size2.sizeX-17)/2+9,size2.sizeY),Color2:new(0xFFFFFF,tgl.defaults.colors16.red))
   local main_frame=Frame:new({
     topbar=topbar,selected_text=selected_text,file_frame=file_frame,
     submit_button=submit_button,cancel_button=cancel_button,
-    refresh_button=refresh_button
+    new_button=new_button,new_frame=new_frame
   },size2,tgl.defaults.colors2.white)
   main_frame:open()
   tgl.sys.setActiveArea(size2)
@@ -341,7 +372,7 @@ function tui.selectFile(size2,startFolder,startFile,allowFolder)
   local cancel=false
   getFiles()
   while run do
-    local id,v=event.pullMultiple("tui_file_submit","tui_file_cancel","tui_open_dir")
+    local id,v=event.pullMultiple("tui_file_submit","tui_file_cancel","tui_open_dir","tui_file_new")
     if id=="tui_file_submit" then
       os.sleep(.5)
       run=false
@@ -349,6 +380,20 @@ function tui.selectFile(size2,startFolder,startFile,allowFolder)
       os.sleep(.5)
       cancel=true
       run=false
+    elseif id=="tui_file_new" then
+      file_frame:disable()
+      file_frame:disableAll()
+      local filename,isdir=getNewFile()
+      if filename then
+        if isdir then fs.makeDirectory(filename)
+        else
+          io.open(filename,"w"):write(""):close()
+        end
+      end
+      file_frame:enable()
+      file_frame:enableAll()
+      getFiles()
+      --enable fileframe
     else getFiles()
     end
   end
