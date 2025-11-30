@@ -1053,12 +1053,16 @@ function Frame:add(object,name)
   end
   return false
 end
----Remove an object
+---Remove (and disable) an object
 ---@param elem integer|string object name
 function Frame:remove(elem)
-  if tonumber(elem) then
-    table.remove(self.objects,tonumber(elem))
-  else
+  if self.objects[elem] then
+    if tgl.sys.enableTypes[elem.type] then
+      self.objects[elem]:disable()
+    end
+    if tgl.sys.enableAllTypes[elem.type] then
+      self.objects[elem]:disableAll()
+    end
     self.objects[elem]=nil
   end
 end
@@ -1168,6 +1172,7 @@ end
 ---@class ScrollFrame:Frame
 ---@field showScroll boolean NotImplemented: Show scrollbar(default=true)
 ---@field scroll integer Current scroll
+---@field maxScroll integer
 ---@field handler function
 ---@field enable function
 ---@field disable function 
