@@ -31,7 +31,7 @@ function CheckBox:new(pos2,col2,width,char)
   obj.enabled=false
   obj.value=false
   obj.width=width or 1
-  obj.text=tgl.util.strgen(" ",1)
+  obj.text=string.rep(" ",1)
   obj.handler=function(_,_,x,y)
     if x>=obj.pos2.x
     and x<obj.pos2.x+unicode.wlen(obj.text)
@@ -65,12 +65,12 @@ function CheckBox:toggle()
   self:disable()
   if self.value==true then
     self.value=false
-    self.text=tgl.util.strgen(" ",self.width)
+    self.text=string.rep(" ",self.width)
   else
     self.value=true
     local size=math.floor((self.width-unicode.wlen(self.char))/2)
     local size2=math.ceil((self.width-unicode.wlen(self.char))/2)
-    self.text=tgl.util.strgen(" ",size)..self.char..tgl.util.strgen(" ",size2)
+    self.text=string.rep(" ",size)..self.char..string.rep(" ",size2)
   end
   self:render()
   os.sleep(.5)
@@ -95,13 +95,13 @@ function Progressbar:new(pos2,width,col2)
   obj.pos2=pos2 or Pos2:new()
   obj.width=tonumber(width) or 10
   obj.col2=col2 or tgl.defaults.colors2.progressbar
-  obj.text=tgl.util.strgen(" ",obj.width)
+  obj.text=string.rep(" ",obj.width)
   obj.value=0
   return obj
 end
 function Progressbar:render()
   local fill=math.floor(self.width*self.value)
-  self.text=tgl.util.strgen(tgl.defaults.chars.full,fill)..tgl.util.strgen(" ",self.width-fill)
+  self.text=string.rep(tgl.defaults.chars.full,fill)..string.rep(" ",self.width-fill)
   local prev=tgl.changeToColor2(self.col2)
   gpu.set(self.pos2.x,self.pos2.y,self.text)
   tgl.changeToColor2(prev,true)

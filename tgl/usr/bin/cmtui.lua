@@ -294,7 +294,7 @@ local function nping()
     return
   end
   tgl.sys.setActiveArea(Size2:new(5,4,35,8))
-  local window=tgl.defaults.window(Size2:new(5,4,35,8),"Node Ping",blue,gray)
+  local window=tui.window(Size2:new(5,4,35,8),"Node Ping",blue,gray)
   if not window then return end
   window:add(Text:new("Pinging node "..string.sub(os.getenv("node_uuid"),1,4)..":0000",gray,Pos2:new(2,2)))
   window:open()
@@ -332,7 +332,7 @@ local function cping()
     notify("Couldn't find host!")
     return false
   end
-  local window=tgl.defaults.window(Size2:new(5,4,35,8),"Client Ping",blue,gray)
+  local window=tui.window(Size2:new(5,4,35,8),"Client Ping",blue,gray)
   if not window then return end
   tgl.sys.setActiveArea(Size2:new(5,4,35,8))
   window:add(Text:new("Pinging client "..to_ip,gray,Pos2:new(2,2)))

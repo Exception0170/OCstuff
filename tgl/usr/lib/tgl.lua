@@ -98,9 +98,9 @@ end
 function tgl.util.log(text,mod)
   if tgl.debug then
     local c=require("component")
+    if not mod then mod="MAIN" end
     local s="["..require("computer").uptime().."][TGL]["..mod.."] "..text
     if c.isAvailable("ocelot") then
-      if not mod then mod="MAIN" end
       c.ocelot.log(s)
     elseif tgl.logfile~="" then
       local file=io.open(tgl.logfile,"a")
