@@ -1,8 +1,8 @@
 0.7
-update tgl-img
 finish tgl-ui
 update cmtui, zirnox
-
+size2 in size2
+tgl-img: render part of image
 
 fix scrollframe
 Text2
