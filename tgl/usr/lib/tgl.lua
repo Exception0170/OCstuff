@@ -7,7 +7,7 @@ local event=require("event")
 local term=require("term")
 local unicode=require("unicode")
 local tgl={}
-tgl.ver="0.7.0"
+tgl.ver="0.7.1"
 tgl.debug=true
 tgl.logfile="" --file to log
 ---Utility methods
@@ -915,14 +915,14 @@ BoxObject.__index=BoxObject
 Frame=setmetatable({},{__index=BoxObject})
 Frame.__index=Frame
 ---@param objects table<string|integer, UIObject|LineObject|BoxObject>
----@param size2? Size2
+---@param size2 Size2
 ---@param col2? Color2
 ---@return Frame
 function Frame:new(objects,size2,col2)
   local obj=setmetatable({},self)
   obj.type="Frame"
-  obj.objects=objects or {}
-  obj.size2=size2 or Size2:newFromSize(1,1,tgl.defaults.screenSizeX,tgl.defaults.screenSizeY)
+  obj.objects=objects
+  obj.size2=size2
   obj.col2=col2 or Color2:new()
   obj.borderType="inline"
   --translate objects
@@ -940,7 +940,6 @@ function Frame:translate()
           object.pos2=Pos2:new(t_pos2.x+self.size2.x1-1,t_pos2.y+self.size2.y1-1) --offset
           if object.type=="Bar" then
             if object.pos2.x+object.sizeX>self.size2.sizeX then
-              --tgl.util.log("Bar Rescale: "..object.sizeX.." -> "..self.size2.sizeX.." - "..object.pos2.x.." + "..self.size2.x1,"Frame/translate:Bar")
               object.sizeX=self.size2.sizeX-object.pos2.x+self.size2.x1
             end
           end
@@ -1057,10 +1056,10 @@ end
 ---@param elem integer|string object name
 function Frame:remove(elem)
   if self.objects[elem] then
-    if tgl.sys.enableTypes[elem.type] then
+    if tgl.sys.enableTypes[self.objects[elem].type] then
       self.objects[elem]:disable()
     end
-    if tgl.sys.enableAllTypes[elem.type] then
+    if tgl.sys.enableAllTypes[self.objects[elem].type] then
       self.objects[elem]:disableAll()
     end
     self.objects[elem]=nil
@@ -1173,12 +1172,21 @@ end
 ---@field showScroll boolean NotImplemented: Show scrollbar(default=true)
 ---@field scroll integer Current scroll
 ---@field maxScroll integer
+---@field isDragging boolean
+---@field lastDragY integer
 ---@field handler function
+---@field handleDragEvents function
 ---@field enable function
----@field disable function 
-ScrollFrame={}
+---@field disable function
+---@field scrollbarCol2 Color2 Color2 of side scroller
+ScrollFrame=setmetatable({},{__index=Frame})
 ScrollFrame.__index=ScrollFrame
-function ScrollFrame:new(objects,size2,col2)
+---@param objects table<string|integer, BoxObject|LineObject|UIObject>
+---@param size2 Size2
+---@param col2? Color2
+---@param scrollcol2? Color2
+---@return ScrollFrame
+function ScrollFrame:new(objects,size2,col2,scrollcol2)
   local obj=setmetatable({},ScrollFrame)
   obj.type="ScrollFrame"
   obj.objects=objects or {}
@@ -1187,24 +1195,54 @@ function ScrollFrame:new(objects,size2,col2)
   obj.showScroll=true
   obj.maxScroll=5
   obj.scroll=0
+  obj.scrollbarCol2=scrollcol2 or Color2:new(0xFFFFFF,tgl.defaults.colors16.lightgray)
+  obj.isDragging=false
 
-  obj.handler=function (_,_,x,y,scr)
-    if x>=obj.size2.x1 and x<=obj.size2.x2 and
+  obj.handler=function (id,_,x,y,scr)
+    if id=="scroll" then
+      if x>=obj.size2.x1 and x<=obj.size2.x2 and
+        y>=obj.size2.y1 and y<=obj.size2.y2 then
+        if obj.scroll-scr>=0 and obj.scroll-scr<=obj.maxScroll then
+          obj.scroll=obj.scroll-scr
+          obj:render()
+        end
+      end
+    else
+      if obj.showScroll and x==obj.size2.x2-1 and
       y>=obj.size2.y1 and y<=obj.size2.y2 then
-      if obj.scroll+scr>=0 and obj.scroll+scr<=obj.maxScroll then
-        obj.scroll=obj.scroll+scr
-        obj:render()
+        obj.isDragging=true
+        obj.lastDragY=y
+        obj:handleDragEvents()
+      end
+    end
+  end
+  obj.handleDragEvents=function()
+    while obj.isDragging do
+      local id,_,x,y=event.pullMultiple("drag","drop")
+      if id=="drag" then
+        -- Update scroll based on drag movement (ignore x, only use y)
+        if obj.lastDragY then
+          local delta_y=y-obj.lastDragY
+          if delta_y~=0 then
+            -- Convert screen drag to scroll amount
+            local visible_height=obj.size2.sizeY
+            local scroll_delta=math.floor(delta_y*obj.maxScroll/visible_height)
+            local new_scroll=obj.scroll+scroll_delta
+            obj.scroll=math.max(0,math.min(obj.maxScroll,new_scroll))
+            obj:render()
+          end
+          obj.lastDragY = y
+        end
+      elseif id=="drop" then
+        obj.isDragging=false
+        obj.lastDragY=nil
+        break
       end
     end
   end
 
   obj:translate()
   return obj
-end
-function ScrollFrame:setMaxScroll(n) --?
-  if not tonumber(n) then return false end
-  self.maxScroll=n
-  self.trueSize2=Size2:newFromSize(self.size2.x,self.size2.y,self.size2.sizeX,self.size2.sizeY+self.maxScroll)
 end
 function ScrollFrame:translate()
   for _,object in pairs(self.objects) do
@@ -1241,8 +1279,23 @@ function ScrollFrame:render()
   --frame
   tgl.fillSize2(self.size2,self.col2)
   --scrollbar
-  if self.showScroll then
-    
+  if self.showScroll and self.maxScroll > 0 then
+    local scrollbar_x = self.size2.x2-1
+    -- Calculate scrollbar metrics
+    local visible_height = self.size2.sizeY
+    local total_height = visible_height + self.maxScroll
+    local scrollbar_height = math.max(1, math.floor(visible_height * visible_height / total_height))
+    local scrollbar_pos = math.floor(self.scroll * (visible_height - scrollbar_height) / self.maxScroll)
+    local prex,prey=term.getCursor()
+    local precol2=tgl.changeToColor2(self.scrollbarCol2)
+    gpu.fill(scrollbar_x,self.size2.y1,1,visible_height," ")
+    -- Draw scrollbar thumb
+    if scrollbar_height > 0 then
+      local thumb_y=self.size2.y1+scrollbar_pos
+      gpu.fill(scrollbar_x,thumb_y,1,scrollbar_height, "█")
+    end
+    term.setCursor(prex,prey)
+    tgl.changeToColor2(precol2,true)
   end
   --objects
   for _,object in pairs(self.objects) do
@@ -1266,9 +1319,11 @@ end
 
 function ScrollFrame:enable()
   event.listen("scroll",self.handler)
+  event.listen("touch",self.handler)
 end
 function ScrollFrame:disable()
   event.ignore("scroll",self.handler)
+  event.ignore("touch",self.handler)
 end
 function ScrollFrame:enableAll()
   for _,object in pairs(self.objects) do
@@ -1286,10 +1341,61 @@ function ScrollFrame:disableAll()
     end
   end
 end
+---Add an object to frame(with translating)
+---@param object UIObject
+---@param name? string
+---@return boolean
 function ScrollFrame:add(object,name)
-  --NotImplemented
+  if type(object)~="table" then return false end
+  if object.type then
+    if not name then
+      table.insert(self.objects,object)
+    else
+      self.objects[name]=object
+    end
+    self:translate()
+    return true
+  end
+  return false
 end
-
+---Remove (and disable) an object
+---@param elem integer|string object name
+function ScrollFrame:remove(elem)
+  if self.objects[elem] then
+    if tgl.sys.enableTypes[self.objects[elem].type] then
+      self.objects[elem]:disable()
+    end
+    if tgl.sys.enableAllTypes[self.objects[elem].type] then
+      self.objects[elem]:disableAll()
+    end
+    self.objects[elem]=nil
+  end
+end
+---Display the frame, enableAll.
+---if object has `ignoreOpen=true`, then it is not opened recursively
+---@param ignore_ss? boolean Ignore saving screen behind frame
+function ScrollFrame:open(ignore_ss)
+  self.hidden=false
+  if not ignore_ss then self.ss=ScreenSave:new(self.size2) end
+  for _,object in pairs(self.objects) do
+    if object.type then
+      if tgl.sys.openTypes[object.type] and not object.ignoreOpen then object:open() end
+    end
+  end
+  self:render()
+  self:enableAll()
+end
+---Closes frame and disableAll. If screensave was stored, displayes saved screen
+function ScrollFrame:close()
+  self.hidden=true
+  self:disableAll()
+  if self.ss then self.ss:render() self.ss=nil end
+  for _,object in pairs(self.objects) do
+    if object.type then
+      if tgl.sys.openTypes[object.type] then object:close() end
+    end
+  end
+end
 ---WIP Object dumps to text
 tgl.dump={}
 function tgl.dump.encodeObject(obj)
