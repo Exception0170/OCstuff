@@ -4,7 +4,7 @@ local event=require("event")
 local gpu=require("component").gpu
 local unicode=require("unicode")
 local tui={}
-tui.ver="1.1.0 dev"
+tui.ver="1.1"
 --moved from tgl.defaults
 
 ---Checkbox object
@@ -224,9 +224,16 @@ function tui.selectFile(size2,startFolder,startFile,allowFolder)
   end
   if not allowFolder then allowFolder=false end
   if not size2 then size2=tui.autoSize2(40,20) end
+  local gray=0xE1E1E1
+  if require("component").gpu.getDepth()==4 then
+    gray=tgl.defaults.colors16.lightgray
+  end
   local topbar_col=Color2:new(0xFFFFFF,tgl.defaults.colors16.lightblue)
-  local filebg_col=Color2:new(0,0xE1E1E1)
-  local dir_col=Color2:new(tgl.defaults.colors16.darkblue,0xE1E1E1)
+  local filebg_col=Color2:new(0,gray)
+  local filelua_col=Color2:new(tgl.defaults.colors16.darkgreen,gray)
+  local filetmg_col=Color2:new(tgl.defaults.colors16.magenta,gray)
+  local dir_col=Color2:new(tgl.defaults.colors16.darkblue,gray)
+
   local topbar=Frame:new({title=Text:new("Select file",topbar_col,Pos2:new((size2.sizeX-11)/2,1))},
   Size2:newFromSize(1,1,size2.sizeX,1),topbar_col)
   --!!!TODO: InputField for folder
@@ -235,81 +242,124 @@ function tui.selectFile(size2,startFolder,startFile,allowFolder)
   --set default scroll to 0; setup later
   file_frame.maxScroll=0
   local function updateSelectedText()
-    selected_text:updateText("Selected: "..current_dir..""..selected_text)
+    selected_text:updateText("Selected: "..fs.concat(current_dir,selected_file))
   end
   local function getFileButton(filename, absolutePath,y,col)
     local isDir=fs.isDirectory(absolutePath)
-    return Button:new(filename,function ()
+    local btn=Button:new(filename,nil,Pos2:new(1,y),col)
+    btn.callback=function ()
       if (selected_file~=filename and not isDir) or (selected_file~=filename and isDir and allowFolder)then
         --select
         selected_file=filename
         updateSelectedText()
       elseif selected_file~=filename and isDir and allowFolder==false then
         --open
+        selected_file=""
+        current_dir=absolutePath
         event.push("tui_open_dir",absolutePath)
+        btn:disable()
       elseif selected_file==filename and isDir then
         --open
+        selected_file=""
+        current_dir=absolutePath
         event.push("tui_open_dir",absolutePath)
+        btn:disable()
       else
         --nothing?
       end
-    end,Pos2:new(1,y),col)
+    end
+    btn.onClick=function()
+      btn:disable()
+      os.sleep(.5)
+      btn:enable()
+    end
+    return btn
   end
   local function getFiles()
     --remove old
     for k,v in pairs(file_frame.objects) do
       file_frame:remove(k)
     end
+    file_frame:render()
     local list=fs.list(current_dir)
     if not list then
       tgl.util.log("Couldn't list files!","TGL-UI/selectFile")
       return
     end
+    --sorting
+    local dirs={}
+    local files={}
+    for file in list do
+      if fs.isDirectory(fs.concat(current_dir,file)) then
+        table.insert(dirs, file)
+      else
+        table.insert(files, file)
+      end
+    end
+    table.sort(dirs, function(a,b) return a:lower()<b:lower() end)
+    table.sort(files,function(a,b) return a:lower()<b:lower() end)
+    --add .. if not root
     local y=1
     if current_dir~="" and current_dir~="/" then
       file_frame:add(getFileButton("..",fs.concat(current_dir,".."),y,dir_col),"..")
+      file_frame.objects[".."]:enable()
       y=y+1
     end
-    for file in list do
+    for _,file in pairs(dirs) do
+      file_frame:add(getFileButton(file,fs.concat(current_dir,file),y,dir_col),file)
+      file_frame.objects[file]:enable()
+      y=y+1
+    end
+    for _,file in pairs(files) do
       local col=filebg_col
-      if fs.isDirectory(file) then col=dir_col end
+      if string.match(file,".lua") then col=filelua_col
+      elseif string.match(file,".tmg") then col=filetmg_col end
       file_frame:add(getFileButton(file,fs.concat(current_dir,file),y,col),file)
       file_frame.objects[file]:enable()
       y=y+1
     end
     if y>file_frame.size2.sizeY then
       file_frame.maxScroll=y-file_frame.size2.sizeY
-    end
+    else file_frame.maxScroll=0 end
+    file_frame.scroll=0
+    file_frame:render()
   end
+  local refresh_button=Button:new("Refresh",function()file_frame:render() updateSelectedText() end,
+  Pos2:new(1,size2.sizeY),tgl.defaults.colors2.white)
   local submit_button=tgl.EventButton("[Submit]","tui_file_submit","",
-  Pos2:new((size2.sizeX-17)/2,size2.sizeY),tgl.defaults.colors2.white)
+  Pos2:new((size2.sizeX-17)/2,size2.sizeY),Color2:new(0,tgl.defaults.colors16.lime))
   local cancel_button=tgl.EventButton("[Cancel]","tui_file_cancel","",
-  Pos2:new((size2.sizeX-17)/2+9,size2.sizeY),tgl.defaults.colors2.white)
+  Pos2:new((size2.sizeX-17)/2+9,size2.sizeY),Color2:new(0,tgl.defaults.colors16.red))
   local main_frame=Frame:new({
     topbar=topbar,selected_text=selected_text,file_frame=file_frame,
-    submit_button=submit_button,cancel_button=cancel_button
-  },size2)
+    submit_button=submit_button,cancel_button=cancel_button,
+    refresh_button=refresh_button
+  },size2,tgl.defaults.colors2.white)
   main_frame:open()
   tgl.sys.setActiveArea(size2)
   local run=true
+  local cancel=false
   getFiles()
   while run do
     local id,v=event.pullMultiple("tui_file_submit","tui_file_cancel","tui_open_dir")
     if id=="tui_file_submit" then
+      os.sleep(.5)
       run=false
     elseif id=="tui_file_cancel" then
-      selected_file=nil
+      os.sleep(.5)
+      cancel=true
       run=false
-    else
-      current_dir=v
-      getFiles()
+    else getFiles()
     end
   end
   --exit
   main_frame:close()
   main_frame=nil
+  file_frame:disableAll()
+  file_frame=nil
   tgl.sys.resetActiveArea()
-  return selected_file
+  if not cancel then return fs.concat(current_dir,selected_file)
+  else return nil end
 end
 ---Select Color2 with input
 function tui.selectColor2RGB()
