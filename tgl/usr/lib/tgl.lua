@@ -1,5 +1,5 @@
 ---Tui Graphics Library
----@version 0.7.0
+---@version 0.7.2
 ---@diagnostic disable: return-type-mismatch
 local gpu=require("component").gpu
 local thread=require("thread")
@@ -7,7 +7,7 @@ local event=require("event")
 local term=require("term")
 local unicode=require("unicode")
 local tgl={}
-tgl.ver="0.7.1"
+tgl.ver="0.7.2"
 tgl.debug=true
 tgl.logfile="" --file to log
 ---Utility methods
@@ -80,19 +80,38 @@ function tgl.sys.resetActiveArea()
   tgl.sys.activeArea=Size2:newFromSize(1,1,tgl.defaults.screenSizeX,tgl.defaults.screenSizeY)
 end
 
+---Checks is Pos2 is inside Size2
 ---@param pos2 Pos2
 ---@param size2 Size2
+---@return boolean
 function tgl.util.pos2InSize2(pos2,size2)
   if size2.type~="Size2" or pos2.type~="Pos2" then return false end
   if pos2.x>=size2.x1 and pos2.x<=size2.x2 and
      pos2.y>=size2.y1 and pos2.y<=size2.y2 then return true
   else return false end
 end
+---Checks if point is inside Size2
+---@param x integer
+---@param y integer
+---@param size2 Size2
+---@return boolean
 function tgl.util.pointInSize2(x,y,size2)
   if size2.type~="Size2" or type(x)~="number" or type(y)~="number" then return false end
-  if x>=size2.x1 and x<=size2.x2 and y>=size2.y1 and y<= size2.y2 then return true 
+  if x>=size2.x1 and x<=size2.x2 and y>=size2.y1 and y<= size2.y2 then return true
   else return false end
 end
+---Checks if size2 is inside size2
+---@param size1 Size2
+---@param size2 Size2
+---@return boolean
+function tgl.util.size2InSize2(size1,size2)
+  if type(size1)~="table" or type(size2)~="table" then return false end
+  if size1.type~="Size2" or size2.type~="Size2" then return false end
+  if size2.x1>=size1.x1 and size2.x2<=size2.x2
+  and size2.y1>=size2.y1 and size2.y2<=size2.y2 then return true
+  else return false end
+end
+
 ---@param text string
 ---@param mod? string module name(default=`"MAIN"`)
 function tgl.util.log(text,mod)
@@ -124,7 +143,7 @@ end
 ---@return string
 function tgl.util.getLine(pos2,len)
   local s=""
-  for i=1,len+1 do
+  for i=1,len do
     local char=gpu.get(pos2.x+i-1,pos2.y)
     s=s..char
   end
@@ -137,6 +156,7 @@ end
 function tgl.util.getLineMatched(pos2,text,col2)
   if type(pos2)~="table" then return end
   if not text then return end
+  if text=="" then return 0 end
   local matched=0
   local dolog=true
   for i=1,unicode.wlen(text) do
@@ -301,13 +321,18 @@ function tgl.changeToColor2(col2,ignore)
   gpu.setBackground(col2[2])
 end
 
+---Colored term.write function
+---@param col2? Color2 default: `tgl.defaults.colors2.error`
+function tgl.cwrite(text,col2)
+  if not col2 then col2=tgl.defaults.colors2.error end
+  local p=tgl.changeToColor2(col2,false)
+  term.write(text)
+  tgl.changeToColor2(p,true)
+end
 ---Colored print function
 ---@param col2? Color2 default: `tgl.defaults.colors2.error`
 function tgl.cprint(text,col2)
-  if not col2 then col2=tgl.defaults.colors2.error end
-  local p=tgl.changeToColor2(col2,false)
-  print(text)
-  tgl.changeToColor2(p,true)
+  tgl.cwrite(text.."\n",col2)
 end
 
 ---2D Position object
@@ -327,7 +352,7 @@ function Pos2:new(x,y)
   x=tonumber(x)
   y=tonumber(y)
   if x and y then
-    if x>0 and y>0 and x<161 and y<=100 then
+    if x>0 and y>0 and x<=tgl.defaults.screenSizeX and y<=tgl.defaults.screenSizeY then
       local obj=setmetatable({},Pos2)
       obj.type="Pos2"
       obj[1]=x
@@ -441,8 +466,8 @@ function Size2:moveToPos2(pos2)
   if not pos2 then return false end
   self.x1=pos2.x
   self.y1=pos2.y
-  self.x2=self.x1+self.sizeX
-  self.y2=self.y1+self.sizeY
+  self.x2=self.x1+self.sizeX-1
+  self.y2=self.y1+self.sizeY-1
   self.pos1=pos2
   self.pos2=Pos2:new(self.x2,self.y2)
   return true
@@ -527,16 +552,17 @@ function Text:render(nextLine)
     term.write(self.text)
     tgl.changeToColor2(prev,true)
     if nextLine then term.write("\n") end
-    return true
+    return
+  end
+  if self.maxLength>4 then
+    gpu.set(self.pos2.x,self.pos2.y,string.rep(" ",self.maxLength))
   end
   gpu.set(self.pos2.x,self.pos2.y,self.text)
   tgl.changeToColor2(prev,true)
-  return true
+  return
 end
 ---Clear text field and render new text
 function Text:updateText(text)
-  self.text=string.rep(" ",unicode.wlen(self.text))
-  self:render()
   self.text=tostring(text)
   self:render()
 end
@@ -611,6 +637,7 @@ function Button:new(text,callback,pos2,color2)
     and x<obj.pos2.x+unicode.wlen(obj.text)
     and y==obj.pos2.y
     and tgl.util.pointInSize2(x,y,tgl.sys.activeArea) then
+      if self.text=="" then return end
       if obj.checkRendered then
         if tgl.util.getLineMatched(obj.pos2,obj.text,obj.col2)/unicode.wlen(obj.text)<0.6 then
           return
@@ -639,6 +666,7 @@ function Button:new(text,callback,pos2,color2)
   return obj
 end
 function Button:enable()
+  if self.enabled==true or self.hidden==true then return end
   self.enabled=true
   event.listen("touch",self.handler)
 end
@@ -791,108 +819,19 @@ function InputField:render()
     if not self.secret then
       gpu.set(self.pos2.x,self.pos2.y,self.text)
     else
-      gpu.set(self.pos2.x,self.pos2.y,tgl.util.strgen("*",unicode.wlen(self.text)))
+      gpu.set(self.pos2.x,self.pos2.y,string.rep("*",unicode.wlen(self.text)))
     end
   end
   tgl.changeToColor2(prev,true)
 end
 function InputField:enable()
+  if self.enabled==true or self.hidden==true then return end
+  self.enabled=true
   event.listen("touch",self.handler)
 end
 function InputField:disable()
+  self.enabled=false
   event.ignore("touch",self.handler)
-end
-
----One-line Bar object, for menus.
----If you use objectColor2, LineObjects can have boolean customCol2 to keep object's col2.
----LineObjects can also have integer customX for positioning.
----@deprecated
----@class Bar:LineObject
----@field objects LineObject[]
----@field objectColor2 Color2|nil Recolor objects
----@field space integer Space between objects(when automatic positioning)
----@field sizeX integer Bar length
----@field centerMode boolean WIP, default=false
-Bar=setmetatable({},{__index=LineObject})
-Bar.__index=Bar
-function Bar:new(pos2,objects,col2,objDefaultCol2)
-  local obj=setmetatable({},self)
-  obj.type="Bar"
-  obj.pos2=pos2 or Pos2:new()
-  obj.col2=col2 or Color2:new()
-  obj.objectColor2=objDefaultCol2 or nil
-  obj.objects=objects or {}
-  obj.space=0
-  obj.sizeX=tgl.defaults.screenSizeX
-  obj.centerMode=false
-  return obj
-end
-function Bar:render()
-  if self.hidden then return false end
-  local prev=tgl.changeToColor2(self.col2)
-  gpu.fill(self.pos2.x,self.pos2.y,self.sizeX,1," ")
-  if self.centerMode then
-    local object=self.objects[1]
-    if object.type then
-      local len=unicode.wlen(object.text)
-      local startX=self.pos2.x+(self.sizeX-len)/2
-      tgl.util.log("Bar start X:"..startX,"Bar/render")
-      object.pos2=Pos2:new(startX,self.pos2.y)
-      if not object.customCol2 and self.objectColor2 then
-        object.col2=self.objectColor2
-      end
-      object:render()
-    end
-  else
-    local startX=self.pos2.x
-    for _,object in pairs(self.objects) do
-      if startX>self.pos2.x+self.sizeX then
-        tgl.util.log("Bar: out of bounds: "..startX,"Bar/render")
-        break
-      end
-      if object.type then
-        if not object.customX then
-          object.pos2=Pos2:new(startX,self.pos2.y)
-          startX=startX+unicode.wlen(object.text)+self.space
-        else
-          object.pos2=Pos2:new(self.pos2.x+object.customX-1,self.pos2.y)
-        end
-        if not object.customCol2 and self.objectColor2 then
-          object.col2=self.objectColor2
-        end
-        object:render()
-      end
-    end
-  end
-  tgl.changeToColor2(prev,true)
-  return true
-end
-function Bar:enableAll()
-  for _,object in pairs(self.objects) do
-    if object.type then
-      if tgl.sys.enableTypes[object.type] then object:enable() end
-    end
-  end
-end
-function Bar:disableAll()
-  for _,object in pairs(self.objects) do
-    if object.type then
-      if tgl.sys.enableTypes[object.type] then object:disable() end
-    end
-  end
-end
-function Bar:add(object,customX,name,customcol)
-  if object.type then
-    object.customX=tonumber(customX)
-    object.customCol2=customcol or nil
-    if not name then
-      table.insert(self.objects,object)
-    else
-      self.objects[name]=object
-    end
-    return true
-  end
-  return false
 end
 
 ---Base BoxObject
@@ -901,6 +840,30 @@ end
 ---@field col2 Color2
 BoxObject=setmetatable({},{__index=UIObject})
 BoxObject.__index=BoxObject
+
+---2D Text
+---@class TextBox:BoxObject
+---@field text string
+TextBox=setmetatable({},{__index=BoxObject})
+TextBox.__index=TextBox
+---@param text string
+---@param size2 Size2
+---@param col2? Color2
+function TextBox:new(text,size2,col2)
+  if not text or type("size2")~="table" then return nil end
+  local obj=setmetatable({},self)
+  obj.type="TextBox"
+  obj.text=text
+  obj.size2=size2
+  obj.col2=col2 or tgl.defaults.colors2.white
+  return obj
+end
+function TextBox:render()
+  tgl.fillSize2(self.size2,self.col2)
+  local prev=tgl.changeToPos2(self.size2.pos1)
+  tgl.cprint(self.text,self.col2)
+  tgl.changeToPos2(prev,true)
+end
 
 ---2D Box frame
 ---@class Frame:BoxObject
@@ -1093,6 +1056,7 @@ function ScreenSave:new(size2)
   return obj
 end
 function ScreenSave:render()
+  local prev=tgl.getCurrentColor2()
   for x=self.size2.x1,self.size2.x2 do
     for y=self.size2.y1,self.size2.y2 do
       if not self.data[x][y] then return false end
@@ -1101,6 +1065,7 @@ function ScreenSave:render()
       gpu.set(x,y,self.data[x][y][1])
     end
   end
+  tgl.changeToColor2(prev,true)
 end
 ---Dump saved data to file
 ---@param filename? string default=`"screensave.st"`
@@ -1178,6 +1143,7 @@ end
 ---@field handleDragEvents function
 ---@field enable function
 ---@field disable function
+---@field enabled boolean
 ---@field scrollbarCol2 Color2 Color2 of side scroller
 ScrollFrame=setmetatable({},{__index=Frame})
 ScrollFrame.__index=ScrollFrame
@@ -1318,10 +1284,13 @@ function ScrollFrame:render()
 end
 
 function ScrollFrame:enable()
+  if self.enabled==true or self.hidden==true then return end
+  self.enabled=true
   event.listen("scroll",self.handler)
   event.listen("touch",self.handler)
 end
 function ScrollFrame:disable()
+  self.enabled=false
   event.ignore("scroll",self.handler)
   event.ignore("touch",self.handler)
 end
