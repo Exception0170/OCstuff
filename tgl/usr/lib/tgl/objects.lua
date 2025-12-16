@@ -398,6 +398,7 @@ tgl.Frame.__index=tgl.Frame
 ---@param col2? tgl.Color2
 ---@return tgl.Frame
 function tgl.Frame:new(objects,size2,col2)
+  if type(objects)~="table" or type(size2)~="table" then return nil end
   local obj=setmetatable({},self)
   obj.type="Frame"
   obj.objects=objects
@@ -568,14 +569,28 @@ function tgl.ScreenSave:new(size2)
 end
 function tgl.ScreenSave:render()
   local prev=tgl.getCurrentColor2()
+  local buf=gpu.allocateBuffer(self.size2.sizeX,self.size2.sizeY)
+  gpu.setActiveBuffer(buf)
+  local buf_x=1
+  local buf_y=1
+  local ok=true
   for x=self.size2.x1,self.size2.x2 do
     for y=self.size2.y1,self.size2.y2 do
-      if not self.data[x][y] then return false end
+      if not self.data[x][y] then
+        ok=false
+        break
+      end
       gpu.setForeground(self.data[x][y][2])
       gpu.setBackground(self.data[x][y][3])
-      gpu.set(x,y,self.data[x][y][1])
+      gpu.set(buf_x,buf_y,self.data[x][y][1])
+      buf_y=buf_y+1
     end
+    buf_y=1
+    buf_x=buf_x+1
   end
+  gpu.setActiveBuffer(0)
+  if ok then gpu.bitblt(0,self.size2.x1,self.size2.y1,self.size2.sizeX,self.size2.sizeY,buf,1,1) end
+  gpu.freeBuffer(buf)
   tgl.changeToColor2(prev,true)
 end
 ---Dump saved data to file

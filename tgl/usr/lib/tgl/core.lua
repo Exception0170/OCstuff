@@ -1,4 +1,4 @@
-local gpu=require("component")
+local gpu=require("component").gpu
 local term=require("term")
 local unicode=require("unicode")
 return function(tgl)
