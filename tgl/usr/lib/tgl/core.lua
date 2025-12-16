@@ -13,6 +13,8 @@ tgl.sys.enableAllTypes={Frame=true,Bar=true,ScrollFrame=true}
 tgl.sys.openTypes={Frame=true,ScrollFrame=true}
 ---Utility methods
 tgl.util={}
+---Defaults table(empty for now, filled in defaults.lua)
+tgl.defaults={}
 ---Active area at screen which defines where elements are interactable
 ---@type tgl.Size2|nil
 tgl.sys.activeArea=nil
@@ -242,14 +244,6 @@ function tgl.Color2:new(col1,col2)
   end
   return nil
 end
-
----Frequently used Color2 objects
-tgl.defaults.colors2={}
-tgl.defaults.colors2.error=Color2:new(tgl.defaults.colors16.red,0)
-tgl.defaults.colors2.black=Color2:new(0xFFFFFF,0)
-tgl.defaults.colors2.white=Color2:new(0,0xFFFFFF)
-tgl.defaults.colors2.close=Color2:new(0xFFFFFF,tgl.defaults.colors16.red)
-tgl.defaults.colors2.progressbar=Color2:new(tgl.defaults.colors16.lime,0xFFFFFF)
 
 ---Gets current cursor color2
 ---@return tgl.Color2
