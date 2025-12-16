@@ -7,7 +7,7 @@ Single object renderer - all objects use it for rendering instead of gpu directl
 /usr/lib/tgl/* for library instead of single file
 stop using global objects and switch to tgl.*
 
-Text2
+fix cmtui 
 InputField2
 screensave to vram?
 object dump - automated?
