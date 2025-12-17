@@ -7,6 +7,7 @@ return function(tgl)
 ---Base for TGL UI objects
 ---@class tgl.UIObject
 ---@field type string
+---@field z_index integer
 ---@field hidden boolean if object is hidden
 ---@field new function(self,...):UIObject Constructor
 ---@field render function Render function
@@ -51,6 +52,7 @@ tgl.Text.__index=tgl.Text
 function tgl.Text:new(text,col2,pos2)
   local obj=setmetatable({},self)
   obj.type="Text"
+  obj.z_index=0
   obj.text=text
   obj.col2=col2 or tgl.Color2:new()
   obj.pos2=pos2 or nil --Intended: pos2 can be nil, text will displayed on current cursor pos
@@ -103,6 +105,7 @@ function tgl.MultiText:new(objects,pos2)
   if type(objects)=="table" then
     local obj=setmetatable({},self)
     obj.type="MultiText"
+    obj.z_index=0
     obj.objects={}
     for k,object in pairs(objects) do
       if type(object)=="table" then
@@ -146,6 +149,7 @@ function tgl.Button:new(text,callback,pos2,color2)
   ---@type tgl.Button
   local obj=setmetatable({},self)
   obj.type="Button"
+  obj.z_index=0
   obj.text=text or "[New Button]"
   if type(callback)~="function" then
   	callback=function() tgl.util.log("Empty Button!","Button/callback") end
@@ -249,6 +253,7 @@ function tgl.InputField:new(text,pos2,col2)
   ---@type tgl.InputField
   local obj=setmetatable({},self)
   obj.type="InputField"
+  obj.z_index=0
   obj.text=""
   obj.secret=false
   obj.defaultText=text or "[______]"
@@ -369,6 +374,7 @@ function tgl.TextBox:new(text,size2,col2)
   if not text or type("size2")~="table" then return nil end
   local obj=setmetatable({},self)
   obj.type="TextBox"
+  obj.z_index=0
   obj.text=text
   obj.size2=size2
   obj.col2=col2 or tgl.defaults.colors2.white
@@ -401,6 +407,7 @@ function tgl.Frame:new(objects,size2,col2)
   if type(objects)~="table" or type(size2)~="table" then return nil end
   local obj=setmetatable({},self)
   obj.type="Frame"
+  obj.z_index=0
   obj.objects=objects
   obj.size2=size2
   obj.col2=col2 or tgl.Color2:new()
@@ -561,6 +568,7 @@ end
 function tgl.ScreenSave:new(size2)
   if not size2 then size2=tgl.Size2:newFromPoint(1,1,tgl.defaults.screenSizeX,tgl.defaults.screenSizeY) end
   local obj=setmetatable({},tgl.ScreenSave)
+  obj.z_index=10
   obj.size2=size2
   obj.data={}
   obj.type="ScreenSave"
@@ -681,6 +689,7 @@ tgl.ScrollFrame.__index=tgl.ScrollFrame
 function tgl.ScrollFrame:new(objects,size2,col2,scrollcol2)
   local obj=setmetatable({},self)
   obj.type="ScrollFrame"
+  obj.z_index=0
   obj.objects=objects or {}
   obj.size2=size2 or tgl.Size2:newFromSize(1,1,10,10)
   obj.col2=col2 or tgl.defaults.colors2.white

@@ -326,6 +326,25 @@ function tgl.changeToPos2(pos2,ignore,offsetX)
   term.setCursor(pos2.x+offsetX,pos2.y)
 end
 
+---@return tgl.Pos2
+function tgl.getCurrentPos2()
+  return tgl.Pos2:new(term.getCursor())
+end
+
+---@return tgl.Pos2, tgl.Color2
+function tgl.getCursorState()
+  return tgl.getCurrentPos2(),tgl.getCurrentColor2()
+end
+
+---@param pos2 tgl.Pos2
+---@param col2 tgl.Color2
+function tgl.setCursorState(pos2,col2,ignore)
+  if not pos2 or not col2 then return end
+  local oldcol2=tgl.changeToColor2(col2,ignore)
+  local oldpos2=tgl.changeToPos2(pos2,ignore)
+  return oldpos2,oldcol2
+end
+
 ---Size2 class defines BoxObject's position and size
 ---@class tgl.Size2
 ---@field type string
