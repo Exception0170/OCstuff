@@ -11,7 +11,6 @@ return function(tgl)
 ---@field hidden boolean if object is hidden
 ---@field new function(self,...):UIObject Constructor
 ---@field render function Render function
----@field z-index integer Layer
 tgl.UIObject={}
 tgl.UIObject.__index=tgl.UIObject
 
@@ -62,6 +61,7 @@ end
 
 ---@param nextLine? boolean change to next line after rendering
 function tgl.Text:render(nextLine)
+  local r=tgl.sys.renderer
   if self.maxLength>=0 then
     if unicode.wlen(self.text)>self.maxLength then
       if self.maxLength>4 then
@@ -72,18 +72,16 @@ function tgl.Text:render(nextLine)
     end
   end
   if self.hidden then return end
-  local prev=tgl.changeToColor2(self.col2)
   if not self.pos2 then
-    term.write(self.text)
-    tgl.changeToColor2(prev,true)
-    if nextLine then term.write("\n") end
+    local text=self.text
+    if nextLine then text=text.."\n" end
+    r:set(tgl.getCurrentPos2(),text,self.col2,self.z_index)
     return
   end
   if self.maxLength>4 then
-    gpu.set(self.pos2.x,self.pos2.y,string.rep(" ",self.maxLength))
+    r:set(self.pos2,string.rep(" ",self.maxLength),self.col2,self.z_index)
   end
-  gpu.set(self.pos2.x,self.pos2.y,self.text)
-  tgl.changeToColor2(prev,true)
+  gpu.set(self.pos2.x,self.pos2.y,self.text,self.col2,self.z_index)
   return
 end
 ---Clear text field and render new text
@@ -203,9 +201,7 @@ function tgl.Button:disable()
 end
 function tgl.Button:render()
   if self.hidden then return end
-  local prev=tgl.changeToColor2(self.col2)
-  gpu.set(self.pos2.x,self.pos2.y,self.text)
-  tgl.changeToColor2(prev,true)
+  tgl.sys.renderer:set(self.pos2,self.text,self.col2,self.z_index)
 end
 
 ---Makes a Button which fires an eventName event with callValue value
@@ -291,17 +287,16 @@ function tgl.InputField:new(text,pos2,col2)
 end
 ---InputField input function
 function tgl.InputField:input()
-  local prev=tgl.changeToPos2(self.pos2)
-  local prevCol=tgl.changeToColor2(self.col2)
+  local r=tgl.sys.renderer
   local printChar=tgl.Text:new(" ",self.charCol2)
   tgl.sys.setActiveArea(tgl.Size2:newFromPos2(self.pos2,Pos2:new(self.pos2.x+unicode.wlen(self.text),self.pos2.y)))
   local offsetX=0
   if self.erase then
-    if self.text=="" then gpu.fill(self.pos2.x,self.pos2.y,unicode.wlen(self.defaultText)+1,1," ")
-    else gpu.fill(self.pos2.x,self.pos2.y,unicode.wlen(self.text)+1,1," ") end
+    if self.text=="" then r:fill(tgl.Size2:new(self.pos2.x,self.pos2.y,unicode.wlen(self.defaultText)+1,1)," ",self.col2,self.z_index)
+    else r:fill(tgl.Size2:new(self.pos2.x,self.pos2.y,unicode.wlen(self.text)+1,1)," ",self.col2,self.z_index) end
     self.text=""
   else
-    if self.text=="" then gpu.fill(self.pos2.x,self.pos2.y,unicode.wlen(self.defaultText)+1,1," ") offsetX=0
+    if self.text=="" then r:fill(tgl.Size2:new(self.pos2.x,self.pos2.y,unicode.wlen(self.defaultText)+1,1)," ",self.col2,self.z_index) offsetX=0
     else offsetX=unicode.wlen(self.text) end
   end
   ---@private
@@ -312,16 +307,16 @@ function tgl.InputField:input()
   printChr()
   while true do
     local id,_,key,key2=event.pullMultiple("interrupted","key_down")
-    if offsetX<0 then offsetX=0 tgl.util.log("Input going offbounds","DIF/input") end
+    if offsetX<0 then offsetX=0 tgl.util.log("Input going offbounds","InputField/input") end
     if key==tgl.defaults.keys.enter or key==tgl.defaults.keys.esc or id=="interrupted" then
       break
     elseif (key==tgl.defaults.keys.backspace or key==tgl.defaults.keys.delete) and unicode.wlen(self.text)>0 then
       local textLen=unicode.wlen(self.text)
-      gpu.fill(self.pos2.x,self.pos2.y,textLen+1,1," ")
+      r:fill(tgl.Size2:new(self.pos2.x,self.pos2.y,textLen+1,1)," ",self.col2,self.z_index)
       offsetX=offsetX-unicode.charWidth(unicode.sub(self.text,textLen))
       self.text=unicode.sub(self.text,1,textLen-1)
       if textLen-1>0 then self:render()
-      else gpu.fill(self.pos2.x,self.pos2.y,unicode.wlen(self.text)+1,1," ") end
+      else r:fill(tgl.Size2:new(self.pos2.x,self.pos2.y,unicode.wlen(self.text)+1,1)," ",self.col2,self.z_index) end
       printChr()
     elseif key>=32 and key~=tgl.defaults.keys.delete then
       if unicode.wlen(self.text)+unicode.charWidth(key)<=unicode.wlen(self.defaultText) then
@@ -332,8 +327,6 @@ function tgl.InputField:input()
       end
     end
   end
-  tgl.changeToPos2(prev,true)
-  tgl.changeToColor2(prevCol,true)
   printChar.col2=self.col2
   printChr()
   self:render()
@@ -341,16 +334,15 @@ function tgl.InputField:input()
 end
 function tgl.InputField:render()
   if self.hidden then return false end
-  local prev=tgl.changeToColor2(self.col2)
-  if self.text=="" then gpu.set(self.pos2.x,self.pos2.y,self.defaultText)
+  local r=tgl.sys.renderer
+  if self.text=="" then r:set(self.pos2,self.defaultText,self.col2,self.z_index)
   else
     if not self.secret then
-      gpu.set(self.pos2.x,self.pos2.y,self.text)
+      r:set(self.pos2,self.text,self.col2,self.z_index)
     else
-      gpu.set(self.pos2.x,self.pos2.y,string.rep("*",unicode.wlen(self.text)))
+      r:set(self.pos2,string.rep("*",unicode.wlen(self.text)),self.col2,self.z_index)
     end
   end
-  tgl.changeToColor2(prev,true)
 end
 function tgl.InputField:enable()
   if self.enabled==true or self.hidden==true then return end
@@ -381,10 +373,8 @@ function tgl.TextBox:new(text,size2,col2)
   return obj
 end
 function tgl.TextBox:render()
-  tgl.fillSize2(self.size2,self.col2)
-  local prev=tgl.changeToPos2(self.size2.pos1)
-  tgl.cprint(self.text,self.col2)
-  tgl.changeToPos2(prev,true)
+  tgl.sys.renderer:fill(self.size2," ",self.col2,self.z_index)
+  tgl.sys.renderer:set(self.size2.pos1,self.text,self.col2,self.z_index)--!
 end
 
 ---2D Box frame
@@ -443,56 +433,53 @@ function tgl.Frame:translate()
 end
 function tgl.Frame:render()
   if self.hidden then return false end
+  local r=tgl.sys.renderer
+  local s=self.size2
+  local col2=self.col2
+  local z=self.z_index
   --frame
-  tgl.fillSize2(self.size2,self.col2)
-  --border
-  if type(self.borders)=="string" and unicode.wlen(self.borders)>=6 then
-    if not self.borderType then self.borderType="inline" end
-    if self.borderType=="outline" then
-      local horizontal=unicode.sub(self.borders,1,1)
-      local vertical=unicode.sub(self.borders,2,2)
-      local right_top=unicode.sub(self.borders,4,4)
-      local left_bottom=unicode.sub(self.borders,5,5)
-      local right_bottom=unicode.sub(self.borders,6,6)
-      gpu.set(self.size2.x1+1,self.size2.y2+1,left_bottom)
-      gpu.set(self.size2.x2+1,self.size2.y1,right_top)
-      gpu.set(self.size2.x2+1,self.size2.y2+1,right_bottom)
-      for i=self.size2.x1+2,self.size2.x2 do
-        gpu.set(i,self.size2.y2+1,horizontal)
-      end
-      for i=self.size2.y1+1,self.size2.y2 do
-        gpu.set(self.size2.x2+1,i,vertical)
-      end
-    elseif self.borderType=="inline" then
-      local horizontal=unicode.sub(self.borders,1,1)
-      local vertical=unicode.sub(self.borders,2,2)
-      local left_top=unicode.sub(self.borders,3,3)
-      local right_top=unicode.sub(self.borders,4,4)
-      local left_bottom=unicode.sub(self.borders,5,5)
-      local right_bottom=unicode.sub(self.borders,6,6)
-      local prev=tgl.changeToColor2(self.col2)
-      for i=self.size2.x1+1,self.size2.x2-1 do
-        gpu.set(i,self.size2.y1,horizontal)
-        gpu.set(i,self.size2.y2,horizontal)
-      end
-      for i=self.size2.y1+1,self.size2.y2-1 do
-        gpu.set(self.size2.x1,i,vertical)
-        gpu.set(self.size2.x2,i,vertical)
-      end
-      gpu.set(self.size2.x1,self.size2.y1,left_top)
-      gpu.set(self.size2.x1,self.size2.y2,left_bottom)
-      gpu.set(self.size2.x2,self.size2.y1,right_top)
-      gpu.set(self.size2.x2,self.size2.y2,right_bottom)
-      tgl.changeToColor2(prev,true)
-    else
-      tgl.util.log("Invalid border type: "..tostring(self.borderType),"Frame/render/borders")
-    end
-  end
+  r:fill(s," ",col2,z)
   --objects
   for _,object in pairs(self.objects) do
     if object.type then
       object:render()
     end
+  end
+  --border
+  if type(self.borders)=="string" and unicode.wlen(self.borders)>=6 then
+    local bt=self.borderType or "inline"
+    local h=unicode.sub(self.borders,1,1)
+    local v=unicode.sub(self.borders,2,2)
+    local lt=unicode.sub(self.borders,3,3)
+    local rt=unicode.sub(self.borders,4,4)
+    local lb=unicode.sub(self.borders,5,5)
+    local rb=unicode.sub(self.borders,6,6)
+    local x1,y1=0,0
+    local x2,y2=0,0
+    local hl,vl=0,0
+    if bt=="outline" then
+      x1,y1=s.x1-1,s.y1-1
+      x2,y2=s.x2+1,s.y2+1
+      hl,vl=s.sizeX,s.sizeY
+    elseif bt=="inline" then
+      x1,y1=s.x1,s.y1
+      x2,y2=s.x2,s.y2
+      hl,vl=s.sizeX-2,s.sizeY-2
+    else
+      tgl.util.log("Invalid border type: "..tostring(self.borderType),"Frame/render/borders")
+      return
+    end
+    --top & bottom
+    r:setPoint(x1+1,y1,h:rep(hl),col2,z)
+    r:setPoint(x1+1,y2,h:rep(hl),col2,z)
+    --left & right
+    r:setPoint(x1,y1+1,v:rep(vl),col2,z,true)
+    r:setPoint(x2,y1+1,v:rep(vl),col2,z,true)
+    --corners
+    r:setPoint(x1,y1,lt,col2,z)
+    r:setPoint(x2,y1,rt,col2,z)
+    r:setPoint(x1,y2,lb,col2,z)
+    r:setPoint(x2,y2,rb,col2,z)
   end
 end
 ---Move frame and all its contents
@@ -557,11 +544,12 @@ tgl.ScreenSave=setmetatable({},{__index=tgl.BoxObject})
 tgl.ScreenSave.__index=tgl.ScreenSave
 ---Save the chars from `self.size2` region to `self.data`
 function tgl.ScreenSave:save()
+  local r=tgl.sys.renderer
   for x=self.size2.x1,self.size2.x2 do
     self.data[x]={}
     for y=self.size2.y1,self.size2.y2 do
-      local char,fgcol,bgcol=gpu.get(x,y)
-      self.data[x][y]={char,fgcol,bgcol}
+      local char,col2=r:getPoint(x,y)
+      self.data[x][y]={char,col2}
     end
   end
 end
@@ -576,30 +564,35 @@ function tgl.ScreenSave:new(size2)
   return obj
 end
 function tgl.ScreenSave:render()
-  local prev=tgl.getCurrentColor2()
-  local buf=gpu.allocateBuffer(self.size2.sizeX,self.size2.sizeY)
-  gpu.setActiveBuffer(buf)
-  local buf_x=1
-  local buf_y=1
-  local ok=true
-  for x=self.size2.x1,self.size2.x2 do
-    for y=self.size2.y1,self.size2.y2 do
-      if not self.data[x][y] then
-        ok=false
-        break
+  local r=tgl.sys.renderer
+  local z=self.z_index
+  local success,buf=r:allocateBuffer(self.size2.sizeX,self.size2.sizeY)
+  if success then
+    local buf_x=1
+    local buf_y=1
+    local ok=true
+    for x=self.size2.x1,self.size2.x2 do
+      for y=self.size2.y1,self.size2.y2 do
+        if not self.data[x][y] then
+          ok=false
+          break
+        end
+        r:set(buf_x,buf_y,self.data[x][y][1],self.data[x][y][2],z,buf)
+        buf_y=buf_y+1
       end
-      gpu.setForeground(self.data[x][y][2])
-      gpu.setBackground(self.data[x][y][3])
-      gpu.set(buf_x,buf_y,self.data[x][y][1])
-      buf_y=buf_y+1
+      buf_y=1
+      buf_x=buf_x+1
     end
-    buf_y=1
-    buf_x=buf_x+1
+    if ok then r:bufcopy(buf,0,self.size2) end
+    r:freeBuffer(buf)
+  else
+    tgl.util.log("Using on-screen renderer(slow)","ScreenSave/render")
+    for x=self.size2.x1,self.size2.x2 do
+      for y=self.size2.y1,self.size2.y2 do
+        r:setPoint(x,y,self.data[x][y][1],self.data[x][y][2],z)
+      end
+    end
   end
-  gpu.setActiveBuffer(0)
-  if ok then gpu.bitblt(0,self.size2.x1,self.size2.y1,self.size2.sizeX,self.size2.sizeY,buf,1,1) end
-  gpu.freeBuffer(buf)
-  tgl.changeToColor2(prev,true)
 end
 ---Dump saved data to file
 ---@param filename? string default=`"screensave.st"`
@@ -771,8 +764,9 @@ end
 
 function tgl.ScrollFrame:render()
   if self.hidden then return false end
+  local r=tgl.sys.renderer
   --frame
-  tgl.fillSize2(self.size2,self.col2)
+  r:fill(self.size2," ",self.col2)
   --scrollbar
   if self.showScroll and self.maxScroll > 0 then
     local scrollbar_x = self.size2.x2-1
@@ -781,16 +775,12 @@ function tgl.ScrollFrame:render()
     local total_height = visible_height + self.maxScroll
     local scrollbar_height = math.max(1, math.floor(visible_height * visible_height / total_height))
     local scrollbar_pos = math.floor(self.scroll * (visible_height - scrollbar_height) / self.maxScroll)
-    local prex,prey=term.getCursor()
-    local precol2=tgl.changeToColor2(self.scrollbarCol2)
-    gpu.fill(scrollbar_x,self.size2.y1,1,visible_height," ")
+    r:fill(tgl.Size2:new(scrollbar_x,self.size2.y1,1,visible_height)," ",self.scrollbarCol2)
     -- Draw scrollbar thumb
     if scrollbar_height > 0 then
       local thumb_y=self.size2.y1+scrollbar_pos
-      gpu.fill(scrollbar_x,thumb_y,1,scrollbar_height, "█")
+      r:fill(tgl.Size2:new(scrollbar_x,thumb_y,1,scrollbar_height),"█",self.scrollbarCol2)
     end
-    term.setCursor(prex,prey)
-    tgl.changeToColor2(precol2,true)
   end
   --objects
   for _,object in pairs(self.objects) do

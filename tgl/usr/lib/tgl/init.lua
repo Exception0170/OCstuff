@@ -6,5 +6,6 @@ tgl=dofile("/usr/lib/tgl/defaults.lua")(tgl)
 tgl=dofile("/usr/lib/tgl/renderer.lua")(tgl)
 tgl=dofile("/usr/lib/tgl/objects.lua")(tgl)
 
+tgl.Renderer:init()
 tgl.util.log("TGL version "..tgl.version.." loaded!")
 return tgl

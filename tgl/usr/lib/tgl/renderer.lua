@@ -6,7 +6,10 @@ tgl.sys.renderThread=nil --renderthread
 ---@field type string
 ---@field gpu table
 ---@field queue table
+---@field nextQueue table
 ---@field dirty boolean
+---@field stopped boolean
+---@field rendering boolean
 ---@field activeBuffer integer
 ---@field frameCounter integer
 ---@field frameFreq number
@@ -23,10 +26,12 @@ function tgl.Renderer:init(frequency)
   obj.type="Renderer"
   obj.gpu=require("component").gpu
   obj.queue={}
+  obj.nextQueue={}
   obj.frameCounter=0
   obj.frameFreq=tonumber(frequency) or (1/20)
   obj.dirty=false
   obj.stopped=false
+  obj.rendering=false
   obj.activeBuffer=obj.gpu.getActiveBuffer()
   tgl.sys.renderer=obj
 end
@@ -57,7 +62,11 @@ function tgl.Renderer:addCmd(cmd)
   if cmd.cmd=="bufcopy" then cmd.buffer=nil end
   self.frameCounter=self.frameCounter+1
   cmd.order=self.frameCounter
-  table.insert(self.queue,cmd)
+  if not self.rendering then
+    table.insert(self.queue,cmd)
+  else
+    table.insert(self.nextQueue,cmd)
+  end
   self.dirty=true
   return true
 end
@@ -97,6 +106,11 @@ function tgl.Renderer:execCmd(cmd)
 end
 ---@private
 function tgl.Renderer:sortQueue()
+  if #self.nextQueue>0 then
+    for i=1,#self.nextQueue do
+      table.insert(self.queue,self.nextQueue[i])
+    end
+  end
   table.sort(self.queue,function(a,b)
     if a.z_index~=b.z_index then
       return a.z_index<b.z_index
@@ -106,6 +120,7 @@ function tgl.Renderer:sortQueue()
 end
 ---@private
 function tgl.Renderer:render()
+  self.rendering=true
   self:sortQueue()
   local prev_pos2,prev_col2=tgl.getCursorState()
   local success, err=pcall(function()
@@ -123,6 +138,7 @@ function tgl.Renderer:render()
   self.frameCounter=0
   self.queue={}
   self.dirty=false
+  self.rendering=false
 end
 
 ---public functions
@@ -224,6 +240,24 @@ function tgl.Renderer:get(pos2,buf)
     self.gpu.setActiveBuffer(buf)
   end
   local char,fg_col,bg_col=self.gpu.get(pos2.x,pos2.y)
+  if buf then
+    self.gpu.setActiveBuffer(self.activeBuffer)
+  end
+  return char,tgl.Color2:new(fg_col,bg_col)
+end
+
+function tgl.Renderer:getPoint(x,y,buf)
+  if type(x)~="number" or type(y)~="number" then
+    return nil,nil
+  end
+  if buf then
+    if not self.gpu.buffers()[buf] then
+      tgl.util.log("Getting from nil buffer: "..buf,"Renderer")
+      return nil,nil
+    end
+    self.gpu.setActiveBuffer(buf)
+  end
+  local char,fg_col,bg_col=self.gpu.get(x,y)
   if buf then
     self.gpu.setActiveBuffer(self.activeBuffer)
   end
