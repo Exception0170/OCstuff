@@ -1,10 +1,9 @@
 ---@diagnostic disable: cast-local-type
 ---@diagnostic disable: return-type-mismatch
 local bit32=require("bit32")
-local term=require("term")
 local tgl=require("tgl")
 local tmg={}
-tmg.ver="1.3"
+tmg.ver="1.4"
 tmg.enableCompressing=true --Enable compressing when saving?
 tmg.cache={} --TODO: add cache for frequent colors
 
@@ -266,7 +265,7 @@ function tmg.indexToRgb(idx)
 end
 
 ---Color2 to 2 string bytes
----@param col2 Color2
+---@param col2 tgl.Color2
 ---@return string
 function tmg.col2ToChars(col2)
   return string.char(tmg.rgbToIndex(col2[1]))..string.char(tmg.rgbToIndex(col2[2]))
@@ -274,9 +273,9 @@ end
 ---bytes to Color2
 ---@param b1 integer
 ---@param b2 integer
----@return Color2
+---@return tgl.Color2
 function tmg.bytesToCol2(b1,b2)
-  return Color2:new(tmg.indexToRgb(b1),tmg.indexToRgb(b2))
+  return tgl.Color2:new(tmg.indexToRgb(b1),tmg.indexToRgb(b2))
 end
 
 --4bit color
@@ -310,37 +309,39 @@ function tmg.palette4bitToColor(index)
   return tmg.palette4bit[index]
 end
 ---Color2 to string byte
----@param col2 Color2
+---@param col2 tgl.Color2
 ---@return string
 function tmg.col2toChar4bit(col2)
   return string.char(16*tmg.rgbTo4bit(col2[1])+tmg.rgbTo4bit(col2[2]))
 end
 ---Byte to color2
 ---@param b integer
----@return Color2
+---@return tgl.Color2
 function tmg.byteToCol2(b)
-  return Color2:new(tmg.palette4bitToColor(b//16),tmg.palette4bitToColor(b%16))
+  return tgl.Color2:new(tmg.palette4bitToColor(b//16),tmg.palette4bitToColor(b%16))
 end
 
 ---Image object
----@class Image:BoxObject
+---@class tmg.Image:tgl.BoxObject
 ---@field depth integer Bit depth of color, 4 or 8
 ---@field extended boolean If chars are encoded too
 ---@field pixelsize integer Number of pixels in image
 ---@field name string Image name
 ---@field rawdata string Image rawdata bytes in string form
----@field preloaded boolean If image was parsed into Text objects
----@field data Text[] preloaded image
-Image=setmetatable({},{__index=BoxObject})
-Image.__index=Image
----@param size2 Size2
+---@field preloaded boolean If image was preloaded into buffer
+---@field preload_buf integer
+---@field data tgl.Text[] Array of text objects
+tmg.Image=setmetatable({},{__index=tgl.BoxObject})
+tmg.Image.__index=tmg.Image
+---@param size2 tgl.Size2
 ---@param depth integer
 ---@param name? string
----@return Image
-function Image:new(size2,depth,name)
+---@return tmg.Image
+function tmg.Image:new(size2,depth,name)
   local obj=setmetatable({},self)
   obj.type="Image"
-  obj.size2=size2 or Size2:new(1,1,16,16)
+  obj.z_index=0
+  obj.size2=size2 or tgl.Size2:new(1,1,16,16)
   obj.depth=depth or 8
   obj.extended=false
   obj.pixelsize=obj.size2.sizeX*obj.size2.sizeY*2
@@ -352,8 +353,15 @@ function Image:new(size2,depth,name)
 end
 
 ---Parse the rawdata string and generate Text[] objects.
-function Image:preload()
+---@return boolean success
+function tmg.Image:preload()
   if not self then return false end
+  local r=tgl.sys.renderer
+  local success,buf=r:allocateBuffer(self.size2.sizeX,self.size2.sizeY)
+  if not success then
+    tgl.util.log("Image preload failure","Image/preload")
+    return false
+  end
   local pos=1
   local maxpos=#self.rawdata
   local x=self.size2.x1
@@ -378,23 +386,27 @@ function Image:preload()
         c=tmg.bytesToCol2(self.rawdata:byte(pos),self.rawdata:byte(pos+1))
         pos=pos+2
       end
-      table.insert(self.data,Text:new(char,c,Pos2:new(x+ix-1,y+iy-1)))
+      r:setPoint(ix,iy,char,c,self.z_index,buf)
     end
   end
   self.preloaded=true
+  self.preload_buf=buf
   return true
 end
 
-function Image:unload()
-  self.data={}
+function tmg.Image:unload()
   self.preloaded=false
+  if type(self.preload_buf)=="number" then
+    tgl.sys.renderer:freeBuffer(self.preload_buf)
+  end
+  self.preload_buf=0
   return true
 end
 ---Tries to generate rawdata string bytes from data table
 ---@return boolean
-function Image:convert()
+function tmg.Image:convert()
   --Generates self.rawdata string from self.data array
-  if not self.preloaded then return false end
+  if type(self.data)~="table" then return false end
   table.sort(self.data,function(a,b)
     if a.pos2.y<b.pos2.y then return true
     elseif a.pos2.y<b.pos2.y then return false
@@ -420,7 +432,7 @@ end
 ---Saves to .tmg file format
 ---@param filename string
 ---@return boolean
-function Image:save(filename)
+function tmg.Image:save(filename)
   if not self then return false end
   local file=io.open(filename,"w")
   if not file then return false end
@@ -442,9 +454,9 @@ function Image:save(filename)
 end
 ---Loads from .tmg file format
 ---@param filename string
----@param pos2 Pos2? Position of image(defaults to 1,1)
----@return boolean|Image
-function Image:load(filename,pos2)
+---@param pos2 tgl.Pos2? Position of image(defaults to 1,1)
+---@return boolean|tmg.Image
+function tmg.Image:load(filename,pos2)
   local file=io.open(filename)
   if not file then return false end
   if file:read("l")~="tmg" then return false end
@@ -455,40 +467,34 @@ function Image:load(filename,pos2)
   if not sizeX or not sizeY then return false end
   local size2
   if not pos2 then
-    size2=Size2:newFromSize(1,1,sizeX,sizeY)
+    size2=tgl.Size2:newFromSize(1,1,sizeX,sizeY)
   else
-    size2=Size2:newFromSize(pos2.x,pos2.y,sizeX,sizeY)
+    size2=tgl.Size2:newFromSize(pos2.x,pos2.y,sizeX,sizeY)
   end
-  local img=Image:new(size2,depth,name)
+  local img=tmg.Image:new(size2,depth,name)
+  img.extended=extended
   img.rawdata=tmg.decompress(file:read("*a"),compRLE,compDiff)
   return img
 end
 
-function Image:render()
-  local saved_x,saved_y=term.getCursor()
-  local saved_col2=tgl.getCurrentColor2()
+function tmg.Image:render()
+  if self.hidden then return end
+  local r=tgl.sys.renderer
+  if not self.preloaded then
+    self:preload()
+  end
   if self.preloaded then
-    for i,pixel in ipairs(self.data) do
-      pixel:render()
+    if type(self.preload_buf)=="number" then
+      if r.gpu.buffers()[self.preload_buf] then
+        return r:bufcopy(self.preload_buf,0,self.size2,self.z_index)
+      end
     end
-    term.setCursor(saved_x,saved_y)
-    tgl.changeToColor2(saved_col2,true)
-    return true
+    tgl.util.log("Couldn't use preloaded buffer!","Image/render")
+    self.preloaded=false
+    self.preload_buf=0
   end
+  tgl.util.log("Rendering directly to screen(slow)","Image/render")
   ---rawrender
-  ---@param x integer
-  ---@param y integer
-  ---@param col2 Color2
-  ---@param char string
-  local function writePixel(x,y,col2,char)
-    if not char then char=tmg.char end
-    if not tgl.util.pointInSize2(x,y,self.size2) then
-      tgl.util.log("Trying to write in bad point: ("..x..","..y..") "..tgl.util.objectInfo(self.size2),"Image/render")
-    end
-    tgl.changeToColor2(col2)
-    term.setCursor(x,y)
-    term.write(char)
-  end
   if not self.rawdata then return false end
   local pos=1
   local maxpos=#self.rawdata
@@ -513,11 +519,9 @@ function Image:render()
         c=tmg.bytesToCol2(self.rawdata:byte(pos),self.rawdata:byte(pos+1))
         pos=pos+2
       end
-      writePixel(x+ix-1,y+iy-1,c,char)
+      r:setPoint(x+ix-1,y+iy-1,char,c,self.z_index)
     end
   end
-  term.setCursor(saved_x,saved_y)
-  tgl.changeToColor2(saved_col2,true)
   return true
 end
 return tmg
