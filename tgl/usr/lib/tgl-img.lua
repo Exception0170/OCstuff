@@ -5,6 +5,7 @@ local tgl=require("tgl")
 local tmg={}
 tmg.ver="1.4"
 tmg.enableCompressing=true --Enable compressing when saving?
+tmg.autoPreload=true --Automatically preload
 tmg.cache={} --TODO: add cache for frequent colors
 
 --UTILS
@@ -370,9 +371,7 @@ function tmg.Image:preload()
     for ix=1,self.size2.sizeX do
       if pos>maxpos then
         tgl.util.log("Out of bounds! rawdata is too short: ("..pos.."<"..maxpos..") saving data for debug","Image/preload")
-        self.preloaded=false
-        r:freeBuffer(buf)
-        return false
+        break
       end
       local c
       local char=tmg.char
@@ -387,11 +386,12 @@ function tmg.Image:preload()
         c=tmg.bytesToCol2(self.rawdata:byte(pos),self.rawdata:byte(pos+1))
         pos=pos+2
       end
-      r:setPoint(ix,iy,char,c,self.z_index,buf)
+      r:setPoint(ix,iy,char,c,self.z_index,false,buf)
     end
   end
   self.preloaded=true
   self.preload_buf=buf
+  r:resetCursor()
   return true
 end
 
@@ -481,13 +481,19 @@ end
 function tmg.Image:render()
   if self.hidden then return end
   local r=tgl.sys.renderer
-  if not self.preloaded then
+  local preload_here=false
+  if not self.preloaded and tmg.autoPreload then
     self:preload()
+    preload_here=true
   end
   if self.preloaded then
     if type(self.preload_buf)=="number" then
-      if r.gpu.buffers()[self.preload_buf] then
-        return r:bufcopy(self.preload_buf,0,self.size2,self.z_index)
+      if r:buffers()[self.preload_buf] then
+        local success=r:bufcopy(self.preload_buf,0,self.size2,self.z_index)
+        if preload_here then
+          self:unload()
+        end
+        return success
       end
     end
     tgl.util.log("Couldn't use preloaded buffer!","Image/render")
