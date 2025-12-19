@@ -369,8 +369,9 @@ function tmg.Image:preload()
   for iy=1,self.size2.sizeY do
     for ix=1,self.size2.sizeX do
       if pos>maxpos then
-        tgl.util.log("Out of bounds! rawdata is too short! saving data for debug","Image/preload")
+        tgl.util.log("Out of bounds! rawdata is too short: ("..pos.."<"..maxpos..") saving data for debug","Image/preload")
         self.preloaded=false
+        r:freeBuffer(buf)
         return false
       end
       local c
@@ -503,7 +504,7 @@ function tmg.Image:render()
   for iy=1,self.size2.sizeY do
     for ix=1,self.size2.sizeX do
       if pos>maxpos then
-        tgl.util.log("Out of bounds! rawdata is too short!","Image/render")
+        tgl.util.log("Out of bounds! rawdata is too short("..pos.."<"..maxpos..")!","Image/render")
         break
       end
       local c

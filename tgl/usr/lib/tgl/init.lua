@@ -8,5 +8,6 @@ tgl=dofile("/usr/lib/tgl/util.lua")(tgl)
 tgl=dofile("/usr/lib/tgl/objects.lua")(tgl)
 
 tgl.Renderer:init()
+tgl.sys.renderer:start()
 tgl.util.log("TGL version "..tgl.version.." loaded!")
 return tgl
