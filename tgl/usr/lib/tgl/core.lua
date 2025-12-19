@@ -47,7 +47,7 @@ end
 ---Checks if point is inside Size2
 ---@param x integer
 ---@param y integer
----@param size2 Size2
+---@param size2 tgl.Size2
 ---@return boolean
 function tgl.util.pointInSize2(x,y,size2)
   if size2.type~="Size2" or type(x)~="number" or type(y)~="number" then return false end
@@ -55,8 +55,8 @@ function tgl.util.pointInSize2(x,y,size2)
   else return false end
 end
 ---Checks if size2 is inside size2
----@param size1 Size2
----@param size2 Size2
+---@param size1 tgl.Size2
+---@param size2 tgl.Size2
 ---@return boolean
 function tgl.util.size2InSize2(size1,size2)
   if type(size1)~="table" or type(size2)~="table" then return false end
@@ -86,51 +86,10 @@ function tgl.util.log(text,mod)
 end
 function tgl.util.printColors16(nextLine)
   for name,col in pairs(tgl.defaults.colors16) do
-    Text:new(name,Color2:new(col)):render(nextLine)
+    tgl.Text:new(name,tgl.Color2:new(col)):render(nextLine)
     if not nextLine then term.write(" ") end
   end
   if not nextLine then term.write("\n") end
-end
----Gets line of desired length starting at pos2
----@param pos2 Pos2
----@param len integer
----@return string
-function tgl.util.getLine(pos2,len)
-  local s=""
-  for i=1,len do
-    local char=gpu.get(pos2.x+i-1,pos2.y)
-    s=s..char
-  end
-  return s
-end
----Checks if line at pos2 is matches text[and same color as col2, if given]
----@param pos2 Pos2
----@param text string
----@param col2? Color2
-function tgl.util.getLineMatched(pos2,text,col2)
-  if type(pos2)~="table" then return end
-  if not text then return end
-  if text=="" then return 0 end
-  local matched=0
-  local dolog=true
-  for i=1,unicode.wlen(text) do
-    local char,fgcol,bgcol=gpu.get(pos2.x+i-1,pos2.y)
-    if char==unicode.sub(text,i,i) then
-      if col2 then
-        if fgcol==col2[1] and bgcol==col2[2] then
-          matched=matched+1
-        else
-          --tgl.util.log("Color mismatch: "..tostring(bgcol).." "..tostring(col2[2]),"Util/getLineMatched")
-          if gpu.getDepth()==4 and dolog then tgl.util.log("4bit color problem, refer to tgl.defaults.colors16","Util/getLineMatched") end
-          dolog=false
-        end
-      else matched=matched+1
-      end
-    else
-      --tgl.util.log(char.."!="..unicode.sub(text,i,i),"Util/getLineMatched")
-    end
-  end
-  return matched
 end
 
 function tgl.util.objectInfo(object)
@@ -144,85 +103,6 @@ function tgl.util.objectInfo(object)
   if object.size2 then tgl.util.objectInfo(object.size2) end
   if object.type=="Text" or object.type=="Button" or object.type=="InputField" then tgl.util.log("Text: "..object.text,"util/objectInfo") end
   if object.objects then tgl.util.log("Contains objects","util/objectInfo") end
-end
-
-function tgl.createObject(obj_type,properties)
-  if type(obj_type)~="string" then
-    tgl.util.log("Tried to create object with '"..tostring(obj_type).."' type","main/createObject")
-    return nil
-  end
-  local new_obj=nil
-  if obj_type=="Text" then new_obj=Text:new()
-  elseif obj_type=="MultiText" then new_obj=MultiText:new()
-  elseif obj_type=="Button" then new_obj=Button:new()
-  elseif obj_type=="EventButton" then new_obj=EventButton:new()
-  elseif obj_type=="CheckBox" then new_obj=CheckBox:new()
-  elseif obj_type=="Bar" then new_obj=Bar:new()
-  elseif obj_type=="Progressbar" then new_obj=Progressbar:new()
-  elseif obj_type=="Frame" then new_obj=Frame:new()
-  elseif obj_type=="Pos2" then new_obj=Pos2:new()
-  elseif obj_type=="Color2" then new_obj=Color2:new()
-  elseif obj_type=="Size2" then new_obj=Size2:new()
-  elseif obj_type=="InputField" then new_obj=InputField:new()
-  else tgl.util.log("Unknown type of object: "..obj_type,"main/createObject")
-  end
-  if type(properties)=="table" then
-    new_obj=tgl.util.setProperties(new_obj,properties)
-  end
-  return new_obj
-end
-
-function tgl.util.setProperties(obj,args)
-  if type(obj)~="table" or type(args)~="table" then
-    tgl.util.log("Invalid parameters","util/setProperties")
-    return obj
-  end
-  for key,value in pairs(args) do
-    if key=="objects" and type(value)=="table" then
-      for obj_name,props in pairs(value) do
-        if type(props)=="table" then
-          local new_obj=tgl.createObject(props.type,props)
-          if new_obj then
-            obj[key][obj_name]=new_obj
-          else
-            tgl.util.log("Couldn't create object during setting properties!","util/setProperties")
-          end
-        end
-      end
-    else
-      obj[key]=value
-    end
-  end
-  return obj
-end
---[[example Frame object
-Frame:new({Text:new("Hello",nil,Pos2:new(2,2))},Size2:new(2,2,10,10),Color2:new(0,0xFFFFFF))
-tgl.createObject("Frame",{type="Frame",size2=Size2:new(2,2,10,10),col2=Color2:new(0,0xFFFFFF),objects={{type="Text",text="Hello",pos2=Pos2:new(2,2)}}})
-]]
-
-function tgl.util.getProperties(obj,ignore)
-  if ignore==nil then ignore=true end
-  local res={}
-  local ignored={
-    objects=true,
-    pos2=true, size2=true,
-    relpos2=true, type=true,
-    x1=true, x2=true,
-    y1=true, y2=true,
-    pos1=true, len=true,
-    handler=true,
-    onClick=true,
-    hidden=true,
-    callback=true,
-  }
-  for key,value in pairs(obj) do
-    if ignore then
-      if not ignored[key] then res[key]=value end
-    else
-      res[key]=value
-    end
-  end
-  return res
 end
 
 ---Color object, 1st elem is foreground color, 2nd is background color
@@ -243,12 +123,6 @@ function tgl.Color2:new(col1,col2)
     end
   end
   return nil
-end
-
----Gets current cursor color2
----@return tgl.Color2
-function tgl.getCurrentColor2()
-  return tgl.Color2:new(gpu.getForeground(),gpu.getBackground())
 end
 
 ---Changes cursor color to given Color2
@@ -449,15 +323,4 @@ function tgl.Size2:new(x,y,sizeX,sizeY)
   return tgl.Size2:newFromSize(x,y,sizeX,sizeY)
 end
 
----Fills area with char
----@param size2 tgl.Size2
----@param col2 tgl.Color2
----@param char? string default is space
-function tgl.fillSize2(size2,col2,char)
-  if not size2 then tgl.util.log("no size2 given","fillSize2") return end
-  if not char then char=" " end
-  local prev=tgl.changeToColor2(col2)
-  gpu.fill(size2.x1,size2.y1,size2.sizeX,size2.sizeY,char)
-  tgl.changeToColor2(prev,true)
-end
 return tgl end
