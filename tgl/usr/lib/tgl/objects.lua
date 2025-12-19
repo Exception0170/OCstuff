@@ -81,7 +81,7 @@ function tgl.Text:render(nextLine)
   if self.maxLength>4 then
     r:set(self.pos2,string.rep(" ",self.maxLength),self.col2,self.z_index)
   end
-  gpu.set(self.pos2.x,self.pos2.y,self.text,self.col2,self.z_index)
+  r:set(self.pos2,self.text,self.col2,self.z_index)
   return
 end
 ---Clear text field and render new text
