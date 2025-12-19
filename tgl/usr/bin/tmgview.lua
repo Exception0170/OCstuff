@@ -17,7 +17,7 @@ local function view(filename)
     tgl.cprint("Couldn't open file: "..filename)
     return
   end
-  local img=Image:load(filename)
+  local img=tmg.Image:load(filename)
   if not img then
     tgl.cprint("Couldn't open image")
     return
@@ -26,7 +26,7 @@ local function view(filename)
   img:render()
   require("event").pull("key_down")
   term.clear()
-  tgl.cprint("Image stats",Color2:new(tgl.defaults.colors16.yellow))
+  tgl.cprint("Image stats",tgl.Color2:new(tgl.defaults.colors16.yellow))
   print("Name: "..img.name)
   print("Shape: "..img.size2.sizeX.."x"..img.size2.sizeY.."("..img.size2.sizeX.."x"..(img.size2.sizeY*2)..")")
   print("Color depth: "..img.depth.."bit")
