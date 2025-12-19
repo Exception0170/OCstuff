@@ -583,7 +583,7 @@ function tgl.ScreenSave:render()
       buf_y=1
       buf_x=buf_x+1
     end
-    if ok then r:bufcopy(buf,0,self.size2) end
+    if ok then r:bufcopy(buf,0,self.size2,z) end
     r:freeBuffer(buf)
   else
     tgl.util.log("Using on-screen renderer(slow)","ScreenSave/render")

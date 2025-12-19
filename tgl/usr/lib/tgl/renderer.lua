@@ -50,6 +50,7 @@ function tgl.Renderer:stop() self.stopped=true end
 function tgl.Renderer:resume() self.stopped=false end
 function tgl.Renderer:finish()
   if not self.timer then return false end
+  self:freeAllBuffers()
   return require("event").cancel(self.timer)
 end
 function tgl.Renderer:addCmd(cmd)
@@ -199,14 +200,15 @@ end
 ---@param dst integer
 ---@param copySize2 tgl.Size2
 ---@param bufpos2? tgl.Pos2
+---@param z_index integer
 ---@return boolean
-function tgl.Renderer:bufcopy(src,dst,copySize2,bufpos2)
+function tgl.Renderer:bufcopy(src,dst,copySize2,bufpos2,z_index)
   if type(src)~="number" or type(dst)~="number" or type(copySize2)~="table" then
     tgl.util.log("Illegal buffer copy(bitblt)","Renderer")
     return false
   end
   if not bufpos2 then bufpos2=tgl.Pos2:new(1,1) end
-  self:addCmd({cmd="bufcopy",src=src,dst=dst,size2=copySize2,bufpos2=bufpos2})
+  self:addCmd({cmd="bufcopy",src=src,dst=dst,size2=copySize2,bufpos2=bufpos2,z_index=z_index})
   return true
 end
 
