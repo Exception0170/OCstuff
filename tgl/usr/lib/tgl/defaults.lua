@@ -22,7 +22,12 @@ tgl.defaults={
   keys={
     backspace=8,delete=127,null=0,
     enter=13,space=32,ctrlz=26,
-    ctrlc=3,ctrlv=22,esc=27
+    ctrlc=3,ctrlv=22,esc=27,tab=9
+  },
+  keys2={
+    ctrl=29,alt=56,capslock=58,
+    arrow_up=200,arrow_down=208,
+    arrow_left=203,arrow_right=205
   }
 }
 if require("component").gpu.getDepth()==8 then --different bitdepth results in different 16 colors palette

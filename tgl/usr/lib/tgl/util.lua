@@ -26,10 +26,10 @@ function tgl.util.getLineMatched(pos2,text,col2)
   local matched=0
   local dolog=true
   for i=1,unicode.wlen(text) do
-    local char,fgcol,bgcol=r:getPoint(pos2.x+i-1,pos2.y)
+    local char,col=r:getPoint(pos2.x+i-1,pos2.y)
     if char==unicode.sub(text,i,i) then
       if col2 then
-        if fgcol==col2[1] and bgcol==col2[2] then
+        if col2==col then
           matched=matched+1
         else
           --tgl.util.log("Color mismatch: "..tostring(bgcol).." "..tostring(col2[2]),"Util/getLineMatched")

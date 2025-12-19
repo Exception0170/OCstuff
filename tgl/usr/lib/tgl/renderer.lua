@@ -1,7 +1,9 @@
 local unicode=require("unicode")
+local event=require("event")
 return function(tgl)
 tgl.sys.renderer=nil --where system renderer is stored
 tgl.sys.renderThread=nil --renderthread
+tgl.sys.resetKeybind=18 --Ctrl+R for reset
 ---@class tgl.Renderer
 ---@field type string
 ---@field gpu table
@@ -13,6 +15,7 @@ tgl.sys.renderThread=nil --renderthread
 ---@field activeBuffer integer
 ---@field frameCounter integer
 ---@field frameFreq number
+---@field resetKeybindEnabled boolean
 tgl.Renderer={}
 tgl.Renderer.cmd={}
 tgl.Renderer.__index=tgl.Renderer
@@ -33,25 +36,35 @@ function tgl.Renderer:init(frequency)
   obj.stopped=false
   obj.rendering=false
   obj.activeBuffer=obj.gpu.getActiveBuffer()
+  obj.resetKeybindEnabled=true
   tgl.sys.renderer=obj
 end
 ---internal functions
 
+---If enabled, Ctrl+R will reset
+function tgl.Renderer.resetKeybind(_,_,key1,key2)
+  if key1==tgl.sys.resetKeybind then
+    tgl.sys.renderer:resetCursor()
+  end
+end
+
 function tgl.Renderer:start()
   if self.timer then return end
-  self.timer=require("event").timer(self.frameFreq,function()
+  self.timer=event.timer(self.frameFreq,function()
     if self.stopped then return end
-    if self.dirty then
+    if self.dirty and not self.rendering then
       self:render()
     end
   end,math.huge)
+  if self.resetKeybindEnabled then event.listen("key_down",self.resetKeybind) end
 end
-function tgl.Renderer:stop() self.stopped=true end
+function tgl.Renderer:stop() self.stopped=true end --??
 function tgl.Renderer:resume() self.stopped=false end
 function tgl.Renderer:finish()
   if not self.timer then return false end
   self:freeAllBuffers()
-  return require("event").cancel(self.timer)
+  if self.resetKeybindEnabled then event.ignore("key_down",self.resetKeybind) end
+  return event.cancel(self.timer)
 end
 function tgl.Renderer:addCmd(cmd)
   if type(cmd)~="table" then
@@ -78,7 +91,7 @@ function tgl.Renderer:execCmd(cmd)
   if cmd.col2 then tgl.changeToColor2(cmd.col2,true) end
   if cmd.buffer then
     if cmd.buffer~=self.activeBuffer then
-      if not self.gpu.buffers()[cmd.buffer] then
+      if not self.gpu.buffers()[cmd.buffer] and cmd.buffer~=0 then
         tgl.util.log("Trying to write on non-allocated buffer! ("..cmd.buffer..")","Renderer")
         return false
       else
@@ -94,7 +107,7 @@ function tgl.Renderer:execCmd(cmd)
     --vertical
     local len=unicode.wlen(cmd.value)
     for i=1,len do
-      self.gpu.set(cmd.pos2.x,cmd.pos2.y+i-1,unicode.sub(cmd.value,i))
+      self.gpu.set(cmd.pos2.x,cmd.pos2.y+i-1,unicode.sub(cmd.value,i,i))
     end
     return true
   elseif cmd.cmd=="fill" then
@@ -103,6 +116,16 @@ function tgl.Renderer:execCmd(cmd)
     return self.gpu.copy(cmd.src.x1,cmd.src.y1,cmd.src.sizeX,cmd.src.sizeY,cmd.dst.x,cmd.dst.y)
   elseif cmd.cmd=="bufcopy" then
     return self.gpu.bitblt(cmd.dst,cmd.size2.x1,cmd.size2.y1,cmd.size2.sizeX,cmd.size2.sizeY,cmd.src,cmd.bufpos2.x,cmd.bufpos2.y)
+  elseif cmd.cmd=="reset" then
+    tgl.changeToColor2(cmd.col2)
+    self.gpu.setActiveBuffer(0)
+    return true
+  elseif cmd.cmd=="freebuffer" then
+    return self.gpu.freeBuffer(cmd.id)
+  elseif cmd.cmd=="freebuffers" then
+    self.gpu.freeAllBuffers() return true
+  else
+    tgl.util.log("Unknown cmd: "..require("serialization").serialize(cmd),"Renderer")
   end
 end
 ---@private
@@ -111,6 +134,7 @@ function tgl.Renderer:sortQueue()
     for i=1,#self.nextQueue do
       table.insert(self.queue,self.nextQueue[i])
     end
+    self.nextQueue={}
   end
   table.sort(self.queue,function(a,b)
     if a.z_index~=b.z_index then
@@ -200,9 +224,9 @@ end
 ---@param dst integer
 ---@param copySize2 tgl.Size2
 ---@param bufpos2? tgl.Pos2
----@param z_index integer
+---@param z_index? integer
 ---@return boolean
-function tgl.Renderer:bufcopy(src,dst,copySize2,bufpos2,z_index)
+function tgl.Renderer:bufcopy(src,dst,copySize2,z_index,bufpos2)
   if type(src)~="number" or type(dst)~="number" or type(copySize2)~="table" then
     tgl.util.log("Illegal buffer copy(bitblt)","Renderer")
     return false
@@ -289,7 +313,11 @@ end
 ---@param id integer
 ---@return boolean
 function tgl.Renderer:freeBuffer(id)
-  return self.gpu.freeBuffer(id)
+  if id>0 and self:buffers()[id] then
+    self:addCmd({cmd="freebuffer",id=id})
+    return true
+  end
+  return false
 end
 
 function tgl.Renderer:buffers()
@@ -297,7 +325,11 @@ function tgl.Renderer:buffers()
 end
 
 function tgl.Renderer:freeAllBuffers()
-  self.gpu.freeAllBuffers()
+  self:addCmd({cmd="freebuffers"})
+end
+
+function tgl.Renderer:resetCursor(col2)
+  self:addCmd({cmd="reset",col2=col2 or tgl.defaults.colors2.black})
 end
 
 return tgl end

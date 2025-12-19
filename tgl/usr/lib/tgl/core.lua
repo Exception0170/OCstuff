@@ -125,6 +125,14 @@ function tgl.Color2:new(col1,col2)
   return nil
 end
 
+function tgl.Color2.__eq(a,b)
+  return a[1]==b[1] and a[2]==b[2]
+end
+
+function tgl.Color2.__tostring(c)
+  return "Col2("..c[1]..";"..c[2]..")"
+end
+
 ---Changes cursor color to given Color2
 ---@param col2 tgl.Color2
 ---@param ignore? boolean if function should ignore previous color
@@ -198,6 +206,13 @@ function tgl.changeToPos2(pos2,ignore,offsetX)
     return old
   end
   term.setCursor(pos2.x+offsetX,pos2.y)
+end
+function tgl.Pos2.__eq(a,b)
+  return a.x==b.x and a.y==b.y
+end
+
+function tgl.Pos2.__tostring(p)
+  return "Pos2("..p.x..";"..p.y..")"
 end
 
 ---@return tgl.Pos2

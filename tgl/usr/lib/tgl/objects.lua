@@ -289,7 +289,7 @@ end
 function tgl.InputField:input()
   local r=tgl.sys.renderer
   local printChar=tgl.Text:new(" ",self.charCol2)
-  tgl.sys.setActiveArea(tgl.Size2:newFromPos2(self.pos2,Pos2:new(self.pos2.x+unicode.wlen(self.text),self.pos2.y)))
+  tgl.sys.setActiveArea(tgl.Size2:newFromPos2(self.pos2,tgl.Pos2:new(self.pos2.x+unicode.wlen(self.text),self.pos2.y)))
   local offsetX=0
   if self.erase then
     if self.text=="" then r:fill(tgl.Size2:new(self.pos2.x,self.pos2.y,unicode.wlen(self.defaultText)+1,1)," ",self.col2,self.z_index)
@@ -577,7 +577,7 @@ function tgl.ScreenSave:render()
           ok=false
           break
         end
-        r:set(buf_x,buf_y,self.data[x][y][1],self.data[x][y][2],z,buf)
+        r:setPoint(buf_x,buf_y,self.data[x][y][1],self.data[x][y][2],z,false,buf)
         buf_y=buf_y+1
       end
       buf_y=1
@@ -585,6 +585,7 @@ function tgl.ScreenSave:render()
     end
     if ok then r:bufcopy(buf,0,self.size2,z) end
     r:freeBuffer(buf)
+    r:resetCursor()
   else
     tgl.util.log("Using on-screen renderer(slow)","ScreenSave/render")
     for x=self.size2.x1,self.size2.x2 do
