@@ -1,8 +1,6 @@
 local unicode=require("unicode")
 local thread=require("thread")
 local event=require("event")
-local term=require("term")
-local gpu=require("component").gpu
 return function(tgl)
 ---Base for TGL UI objects
 ---@class tgl.UIObject
@@ -208,11 +206,11 @@ end
 ---@param text string
 ---@param eventName string Event name to push
 ---@param callValue? any Value to push event with
----@param pos2 Pos2?
----@param col2 Color2?
+---@param pos2 tgl.Pos2?
+---@param col2 tgl.Color2?
 ---@return Button
 function tgl.EventButton(text,eventName,callValue,pos2,col2)
-  local obj=Button:new(text,function()end,pos2,col2)
+  local obj=tgl.Button:new(text,function()end,pos2,col2)
   obj.eventName=eventName
   obj.callValue=callValue
   obj.handler=function(_,_,x,y)
