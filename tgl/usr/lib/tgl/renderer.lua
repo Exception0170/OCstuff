@@ -164,6 +164,11 @@ function tgl.Renderer:render()
   self.queue={}
   self.dirty=false
   self.rendering=false
+  event.push("renderDone")
+end
+
+function tgl.Renderer:waitForAll()
+  event.pull("renderDone")
 end
 
 ---public functions

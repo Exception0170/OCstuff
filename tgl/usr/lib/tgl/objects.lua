@@ -554,7 +554,7 @@ end
 function tgl.ScreenSave:new(size2)
   if not size2 then size2=tgl.Size2:newFromPoint(1,1,tgl.defaults.screenSizeX,tgl.defaults.screenSizeY) end
   local obj=setmetatable({},tgl.ScreenSave)
-  obj.z_index=10
+  obj.z_index=0
   obj.size2=size2
   obj.data={}
   obj.type="ScreenSave"

@@ -180,7 +180,7 @@ function tgl.Pos2:new(x,y)
   x=tonumber(x)
   y=tonumber(y)
   if x and y then
-    if x>0 and y>0 and x<=tgl.defaults.screenSizeX and y<=tgl.defaults.screenSizeY then
+    if x>0 and y>0 and x<=tgl.defaults.screenSizeX then
       local obj=setmetatable({},self)
       obj.type="Pos2"
       obj[1]=x
@@ -316,6 +316,10 @@ function tgl.Size2:newFromSize(x,y,sizeX,sizeY)
   end
   return nil
 end
+function tgl.Size2.__tostring(s)
+  return "Size2("..s.sizeX.."x"..s.sizeY..") at "..tostring(s.pos1)
+end
+
 ---@param pos2 tgl.Pos2
 ---@return boolean
 function tgl.Size2:moveToPos2(pos2)

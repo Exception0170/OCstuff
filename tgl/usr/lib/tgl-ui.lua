@@ -234,9 +234,11 @@ function tui.selectFile(size2,startFolder,startFile,allowFolder)
 
   local topbar=tgl.Frame:new({title=tgl.Text:new("Select file",topbar_col,tgl.Pos2:new((size2.sizeX-11)/2,1))},
   tgl.Size2:newFromSize(1,1,size2.sizeX,1),topbar_col)
+  topbar.ignoreOpen=true
   --!!!TODO: InputField for folder
   local selected_text=tgl.Text:new("Selected: "..current_dir..selected_file,tgl.defaults.colors2.white,tgl.Pos2:new(2,2))
   local file_frame=tgl.ScrollFrame:new({},tgl.Size2:newFromSize(1,3,size2.sizeX,size2.sizeY-3),filebg_col)
+  file_frame.ignoreOpen=true
   --set default scroll to 0; setup later
   file_frame.maxScroll=0
   local function updateSelectedText()
@@ -328,7 +330,7 @@ function tui.selectFile(size2,startFolder,startFile,allowFolder)
   new_frame:add(tgl.Text:new("Adding new file",tgl.defaults.colors2.white,tgl.Pos2:new(2,2)))
   new_frame:add(tgl.InputField:new("[ enter filename]",tgl.Pos2:new(2,3),filebg_col),"input")
   new_frame:add(tgl.Text:new("Directory:",tgl.defaults.colors2.white,tgl.Pos2:new(4,4)))
-  new_frame:add(tgl.CheckBox:new(tgl.Pos2:new(14,4),tgl.Color2:new(tgl.defaults.colors16.darkgreen,
+  new_frame:add(tui.CheckBox:new(tgl.Pos2:new(14,4),tgl.Color2:new(tgl.defaults.colors16.darkgreen,
   tgl.defaults.colors16.lightgray),2,tgl.defaults.chars.check),"checkbox")
   new_frame:add(tgl.EventButton("[Submit]","tgl_file_new_submit",nil,
   tgl.Pos2:new(6,5),tgl.Color2:new(0xFFFFFF,tgl.defaults.colors16.lightblue)),"submit")
