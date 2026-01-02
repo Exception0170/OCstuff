@@ -149,6 +149,14 @@ function tgl.changeToColor2(col2,ignore)
   gpu.setBackground(col2[2])
 end
 
+---Inverts foreground and background colors
+---@param col2 tgl.Color2
+---@return tgl.Color2
+function tgl.invertColor2(col2)
+  if not col2 then return nil end
+  return tgl.Color2:new(col2[2],col2[1])
+end
+
 ---Colored term.write function
 ---@param col2? tgl.Color2 default: `tgl.defaults.colors2.error`
 function tgl.cwrite(text,col2)
