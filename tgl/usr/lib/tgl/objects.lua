@@ -437,12 +437,6 @@ function tgl.Frame:render()
   local z=self.z_index
   --frame
   r:fill(s," ",col2,z)
-  --objects
-  for _,object in pairs(self.objects) do
-    if object.type then
-      object:render()
-    end
-  end
   --border
   if type(self.borders)=="string" and unicode.wlen(self.borders)>=6 then
     local bt=self.borderType or "inline"
@@ -455,6 +449,7 @@ function tgl.Frame:render()
     local x1,y1=0,0
     local x2,y2=0,0
     local hl,vl=0,0
+    local drawBorder=true
     if bt=="outline" then
       x1,y1=s.x1-1,s.y1-1
       x2,y2=s.x2+1,s.y2+1
@@ -465,19 +460,27 @@ function tgl.Frame:render()
       hl,vl=s.sizeX-2,s.sizeY-2
     else
       tgl.util.log("Invalid border type: "..tostring(self.borderType),"Frame/render/borders")
-      return
+      drawBorder=false
     end
-    --top & bottom
-    r:setPoint(x1+1,y1,h:rep(hl),col2,z)
-    r:setPoint(x1+1,y2,h:rep(hl),col2,z)
-    --left & right
-    r:setPoint(x1,y1+1,v:rep(vl),col2,z,true)
-    r:setPoint(x2,y1+1,v:rep(vl),col2,z,true)
-    --corners
-    r:setPoint(x1,y1,lt,col2,z)
-    r:setPoint(x2,y1,rt,col2,z)
-    r:setPoint(x1,y2,lb,col2,z)
-    r:setPoint(x2,y2,rb,col2,z)
+    if drawBorder then
+      --top & bottom
+      r:setPoint(x1+1,y1,h:rep(hl),col2,z)
+      r:setPoint(x1+1,y2,h:rep(hl),col2,z)
+      --left & right
+      r:setPoint(x1,y1+1,v:rep(vl),col2,z,true)
+      r:setPoint(x2,y1+1,v:rep(vl),col2,z,true)
+      --corners
+      r:setPoint(x1,y1,lt,col2,z)
+      r:setPoint(x2,y1,rt,col2,z)
+      r:setPoint(x1,y2,lb,col2,z)
+      r:setPoint(x2,y2,rb,col2,z)
+    end
+  end
+  --objects
+  for _,object in pairs(self.objects) do
+    if object.type then
+      object:render()
+    end
   end
 end
 ---Move frame and all its contents
