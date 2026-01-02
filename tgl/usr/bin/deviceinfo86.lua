@@ -3,7 +3,7 @@ local component=require("component")
 local blue=tgl.Color2:new(tgl.defaults.colors16.lightgray,tgl.defaults.colors16.darkblue)
 local gold=tgl.Color2:new(tgl.defaults.colors16.gold,tgl.defaults.colors16.darkblue)
 local gray=tgl.invertColor2(blue)
-local side_y=side_y
+local side_y=30
 if tgl.defaults.screenSizeX>80 then side_y=50 end
 local main=tgl.Frame:new({},tgl.Size2:new(1,1,tgl.defaults.screenSizeX,tgl.defaults.screenSizeY),blue)
 main:add(tgl.Text:new("   DeviceInfo86    ",tgl.Color2:new(tgl.defaults.colors16.lightgray,tgl.defaults.colors16.red),tgl.Pos2:new(1,1)),"memtest")
@@ -40,6 +40,10 @@ local camera
 local lastmemfound=0
 for uuid,obj in pairs(t) do
   if obj.description=="CPU" then cpu={uuid,obj}
+  elseif obj.description=="APU" then
+    cpu={uuid,obj}
+    gpu={uuid,{clock=obj.clock,product="integrated"}}
+    cpu[2].clock=string.sub(cpu[2].clock,1,4)
   elseif obj.description=="Graphics controller" then gpu={uuid,obj}
   elseif obj.class=="display" then display={uuid,obj}
   elseif obj.description=="EEPROM" then eeprom={uuid,obj}
