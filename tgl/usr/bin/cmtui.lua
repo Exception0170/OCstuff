@@ -7,23 +7,22 @@ local mnp=require("cmnp")
 local ip=require("ipv2")
 local filename="/etc/.cm_last_netuuid"
 --setup values
-local version="1.4"
-local blue=Color2:new(0xFFFFFF,tgl.defaults.colors16.darkblue)
-local gray=Color2:new(0,tgl.defaults.colors16.lightgray)
-local red=Color2:new(tgl.defaults.colors16.red,0xFFFFFF)
-local gold=Color2:new(tgl.defaults.colors16.gold,0xFFFFFF)
-local green=Color2:new(tgl.defaults.colors16.darkgreen,0xFFFFFF)
-local checkboxcol=Color2:new(tgl.defaults.colors16.darkgreen,tgl.defaults.colors16.lightgray)
-local progressbarcol=Color2:new(tgl.defaults.colors16.lime,tgl.defaults.colors16.darkgray)
+local version="1.5.0"
+local blue=tgl.Color2:new(0xFFFFFF,tgl.defaults.colors16.darkblue)
+local gray=tgl.Color2:new(0,tgl.defaults.colors16.lightgray)
+local red=tgl.Color2:new(tgl.defaults.colors16.red,0xFFFFFF)
+local gold=tgl.Color2:new(tgl.defaults.colors16.gold,0xFFFFFF)
+local green=tgl.Color2:new(tgl.defaults.colors16.darkgreen,0xFFFFFF)
+local checkboxcol=tgl.Color2:new(tgl.defaults.colors16.darkgreen,tgl.defaults.colors16.lightgray)
+local progressbarcol=tgl.Color2:new(tgl.defaults.colors16.lime,tgl.defaults.colors16.darkgray)
 local white=tgl.defaults.colors2.white
-local app_offset_x=5
-local app_offset_y=3
-local app_size_x=29
+local app_size_x=30
 local app_size_y=10
 local app_current_frame="menu_frame"
 
-local app_size=Size2:new(app_offset_x,app_offset_y,app_size_x,app_size_y)
-local notify_size=Size2:new(7,8,25,5)
+local back_frame=tgl.Frame:new({},tgl.Size2:new(1,1,tgl.defaults.screenSizeX,tgl.defaults.screenSizeY),blue)
+local app_size=tui.centerSize2atSize2(tgl.Size2:new(1,1,app_size_x,app_size_y),back_frame.size2)
+local notify_size=tui.centerSize2atSize2(tgl.Size2:new(1,1,25,5),back_frame.size2)
 --functions
 local function savePrevAddress(name)
   local file=io.open(filename,"w")
@@ -55,7 +54,7 @@ function getpassword()
   if not window then return end
   window.objects.icon.relpos2.y=2
   window.objects.text.relpos2.y=2
-  window:add(InputField:new("[___________________]",Pos2:new(3,3),gray),"input")
+  window:add(tgl.InputField:new("[___________________]",tgl.Pos2:new(3,3),gray),"input")
   window.objects.input.secret=true
   window.objects.close_button.eventName="cmtui_enter_pass"
   window:open()
@@ -72,7 +71,7 @@ function getdomain(allow_ipv2)
   if not window then return end
   window.objects.icon.relpos2.y=2
   window.objects.text.relpos2.y=2
-  window:add(InputField:new("[___________________]",Pos2:new(3,3),white),"input")
+  window:add(tgl.InputField:new("[___________________]",tgl.Pos2:new(3,3),white),"input")
   window.objects.close_button.eventName="cmtui_enter_domain"
   window:open()
   os.sleep(.1)
@@ -99,15 +98,13 @@ function getdomain(allow_ipv2)
 end
 
 --setup objects
-local back_frame=Frame:new({},Size2:new(1,1,tgl.defaults.screenSizeX,tgl.defaults.screenSizeY),blue)
-
-local status_frame=Frame:new({},Size2:new(2,2,app_size_x-1,app_size_y-1),white)
-status_frame:add(Button:new("Close",function() event.push("cmtui_open","menu_frame") end,Pos2:new(2,2),tgl.defaults.colors2.close),"close_button")
-status_frame:add(Text:new("Not connected",red,Pos2:new(3,3)),"status")
-status_frame:add(Text:new("IPv2: ????:????",white,Pos2:new(3,4)),"ip")
-status_frame:add(Text:new("Dynamic IPv2: ",white,Pos2:new(3,5)))
-status_frame:add(Text:new("disabled",red,Pos2:new(17,5)),"dynamic")
-status_frame:add(Text:new("Network name: unknown",white,Pos2:new(3,6)),"netname")
+local status_frame=tgl.Frame:new({},tgl.Size2:new(2,2,app_size_x-1,app_size_y-1),white)
+status_frame:add(tgl.Button:new("Close",function() event.push("cmtui_open","menu_frame") end,tgl.Pos2:new(2,2),tgl.defaults.colors2.close),"close_button")
+status_frame:add(tgl.Text:new("Not connected",red,tgl.Pos2:new(3,3)),"status")
+status_frame:add(tgl.Text:new("IPv2: ????:????",white,tgl.Pos2:new(3,4)),"ip")
+status_frame:add(tgl.Text:new("Dynamic IPv2: ",white,tgl.Pos2:new(3,5)))
+status_frame:add(tgl.Text:new("disabled",red,tgl.Pos2:new(17,5)),"dynamic")
+status_frame:add(tgl.Text:new("Network name: unknown",white,tgl.Pos2:new(3,6)),"netname")
 function status_frame:main()
   local this_ip=os.getenv("this_ip")
   if not this_ip or not mnp.isConnected() then
@@ -136,22 +133,22 @@ function status_frame:main()
 end
 status_frame:close()
 
-local connect_frame=Frame:new({},Size2:new(2,2,app_size_x-1,app_size_y-1),white)
-connect_frame:add(Text:new("Select network",white,Pos2:new(5,1)))
-connect_frame:add(InputField:new("[__________________]",Pos2:new(2,2),gray),"input")
-connect_frame:add(Text:new("",white,Pos2:new(2,3)),"found")
-connect_frame:add(CheckBox:new(Pos2:new(19,5),checkboxcol,1,"*"),"static_checkbox")
-connect_frame:add(Text:new("Use static IPv2",white,Pos2:new(3,5)))
-connect_frame:add(Text:new("Selected:",white,Pos2:new(2,4)))
-connect_frame:add(Text:new("loading..",white,Pos2:new(12,4)),"netname")
-connect_frame:add(tgl.EventButton("Connect","cmtui_connect",nil,Pos2:new(4,6),gray),"connect_button")
-connect_frame:add(tgl.EventButton("Cancel","cmtui_connect_cancel",nil,Pos2:new(13,6),tgl.defaults.colors2.close),"cancel_button")
+local connect_frame=tgl.Frame:new({},tgl.Size2:new(2,2,app_size_x-1,app_size_y-1),white)
+connect_frame:add(tgl.Text:new("Select network",white,tgl.Pos2:new(5,1)))
+connect_frame:add(tgl.InputField:new("[__________________]",tgl.Pos2:new(2,2),gray),"input")
+connect_frame:add(tgl.Text:new("",white,tgl.Pos2:new(2,3)),"found")
+connect_frame:add(tui.CheckBox:new(tgl.Pos2:new(19,5),checkboxcol,1,"*"),"static_checkbox")
+connect_frame:add(tgl.Text:new("Use static IPv2",white,tgl.Pos2:new(3,5)))
+connect_frame:add(tgl.Text:new("Selected:",white,tgl.Pos2:new(2,4)))
+connect_frame:add(tgl.Text:new("loading..",white,tgl.Pos2:new(12,4)),"netname")
+connect_frame:add(tgl.EventButton("Connect","cmtui_connect",nil,tgl.Pos2:new(4,6),gray),"connect_button")
+connect_frame:add(tgl.EventButton("Cancel","cmtui_connect_cancel",nil,tgl.Pos2:new(13,6),tgl.defaults.colors2.close),"cancel_button")
 connect_frame.objects.input.eventName="cmtui_connect_name"
-local connecting_frame=Frame:new({},Size2:new(2,8,25,2),gray)
-connecting_frame:add(Text:new("Connecting:",gray,Pos2:new(1,1)))
-connecting_frame:add(Text:new("awaiting..",gray,Pos2:new(12,1)),"connect_status")
-connecting_frame:add(Progressbar:new(Pos2:new(5,2),10,progressbarcol),"progressbar")
-connecting_frame:add(Text:new("?%",gray,Pos2:new(1,2)),"percent")
+local connecting_frame=tgl.Frame:new({},tgl.Size2:new(2,8,25,2),gray)
+connecting_frame:add(tgl.Text:new("Connecting:",gray,tgl.Pos2:new(1,1)))
+connecting_frame:add(tgl.Text:new("awaiting..",gray,tgl.Pos2:new(12,1)),"connect_status")
+connecting_frame:add(tui.Progressbar:new(tgl.Pos2:new(5,2),10,progressbarcol),"progressbar")
+connecting_frame:add(tgl.Text:new("?%",gray,tgl.Pos2:new(1,2)),"percent")
 connecting_frame.ignoreOpen=true
 connect_frame:add(connecting_frame,"connecting_frame")
 function connect_frame:main()
@@ -293,10 +290,10 @@ local function nping()
     notify("Not connected!")
     return
   end
-  tgl.sys.setActiveArea(Size2:new(5,4,35,8))
-  local window=tui.window(Size2:new(5,4,35,8),"Node Ping",blue,gray)
+  tgl.sys.setActiveArea(tgl.Size2:new(5,4,35,8))
+  local window=tui.window(tgl.Size2:new(5,4,35,8),"Node Ping",blue,gray)
   if not window then return end
-  window:add(Text:new("Pinging node "..string.sub(os.getenv("node_uuid"),1,4)..":0000",gray,Pos2:new(2,2)))
+  window:add(tgl.Text:new("Pinging node "..string.sub(os.getenv("node_uuid"),1,4)..":0000",gray,tgl.Pos2:new(2,2)))
   window:open()
   local n=4
   local times={}
@@ -305,12 +302,12 @@ local function nping()
     local time=mnp.mncp.nodePing()
     if not time then str=i..")Ping timeout." times[i]=0
     else time=roundTime(time) str=i..")Ping: "..time.."s" times[i]=time end
-    window:add(Text:new(str,gray,Pos2:new(2,2+i)),"ping"..i)
+    window:add(tgl.Text:new(str,gray,tgl.Pos2:new(2,2+i)),"ping"..i)
     window.objects["ping"..i]:render()
   end
   local max,min,avg=calculateStats(times)
-  window:add(Text:new("Ping statistics:",gray,Pos2:new(2,7)))
-  window:add(Text:new("max: "..max.."s min: "..min.."s avg: "..avg.."s",gray,Pos2:new(2,8)))
+  window:add(tgl.Text:new("Ping statistics:",gray,tgl.Pos2:new(2,7)))
+  window:add(tgl.Text:new("max: "..max.."s min: "..min.."s avg: "..avg.."s",gray,tgl.Pos2:new(2,8)))
   window:render()
   window:enableAll()
   event.pull("closeNode Ping")
@@ -332,10 +329,10 @@ local function cping()
     notify("Couldn't find host!")
     return false
   end
-  local window=tui.window(Size2:new(5,4,35,8),"Client Ping",blue,gray)
+  local window=tui.window(tgl.Size2:new(5,4,35,8),"Client Ping",blue,gray)
   if not window then return end
-  tgl.sys.setActiveArea(Size2:new(5,4,35,8))
-  window:add(Text:new("Pinging client "..to_ip,gray,Pos2:new(2,2)))
+  tgl.sys.setActiveArea(tgl.Size2:new(5,4,35,8))
+  window:add(tgl.Text:new("Pinging client "..to_ip,gray,tgl.Pos2:new(2,2)))
   window:open()
   local n=4
   local times={}
@@ -344,12 +341,12 @@ local function cping()
     local time=mnp.mncp.c2cPing(to_ip)
     if not time then str=i..")Ping timeout." times[i]=0
     else time=roundTime(time) str=i..")Ping: "..time.."s" times[i]=time end
-    window:add(Text:new(str,gray,Pos2:new(2,2+i)),"ping"..i)
+    window:add(tgl.Text:new(str,gray,tgl.Pos2:new(2,2+i)),"ping"..i)
     window.objects["ping"..i]:render()
   end
   local max,min,avg=calculateStats(times)
-  window:add(Text:new("Ping statistics:",gray,Pos2:new(2,7)))
-  window:add(Text:new("max: "..max.."s min: "..min.."s avg: "..avg.."s",gray,Pos2:new(2,8)))
+  window:add(tgl.Text:new("Ping statistics:",gray,tgl.Pos2:new(2,7)))
+  window:add(tgl.Text:new("max: "..max.."s min: "..min.."s avg: "..avg.."s",gray,tgl.Pos2:new(2,8)))
   window:render()
   window:enableAll()
   event.pull("closeClient Ping")
@@ -359,17 +356,17 @@ local function cping()
   window=nil
 end
 
-local menu_frame=Frame:new({},Size2:new(2,2,app_size_x-1,app_size_y-1),white)
-menu_frame:add(Text:new("Connection  Manager",white,Pos2:new(5,2)))
-menu_frame:add(Text:new("Text User Interface",white,Pos2:new(5,3)))
-menu_frame:add(Text:new("Version: "..version,white,Pos2:new(5,4)))
-menu_frame:add(tgl.EventButton("Status","cmtui_open","status_frame",Pos2:new(3,6),white),"status_button")
-menu_frame:add(tgl.EventButton("Connect","cmtui_open","connect_frame",Pos2:new(3,7),white),"connect_button")
-menu_frame:add(Button:new("Disconnect",disconnect,Pos2:new(15,7),white),"disconnect_button")
-menu_frame:add(Button:new("Reconnect",reconnect,Pos2:new(3,8),white),"reconnect_button")
-menu_frame:add(Button:new("Set Domain",setdomain,Pos2:new(15,8),white),"setdomain_button")
-menu_frame:add(Button:new("Ping Node",nping,Pos2:new(3,9),white),"nping_button")
-menu_frame:add(Button:new("Ping Client",cping,Pos2:new(15,9),white),"cping_button")
+local menu_frame=tgl.Frame:new({},tgl.Size2:new(2,2,app_size_x-1,app_size_y-1),white)
+menu_frame:add(tgl.Text:new("Connection  Manager",white,tgl.Pos2:new(5,2)))
+menu_frame:add(tgl.Text:new("Text User Interface",white,tgl.Pos2:new(5,3)))
+menu_frame:add(tgl.Text:new("Version: "..version,white,tgl.Pos2:new(5,4)))
+menu_frame:add(tgl.EventButton("Status","cmtui_open","status_frame",tgl.Pos2:new(3,6),white),"status_button")
+menu_frame:add(tgl.EventButton("Connect","cmtui_open","connect_frame",tgl.Pos2:new(3,7),white),"connect_button")
+menu_frame:add(tgl.Button:new("Disconnect",disconnect,tgl.Pos2:new(15,7),white),"disconnect_button")
+menu_frame:add(tgl.Button:new("Reconnect",reconnect,tgl.Pos2:new(3,8),white),"reconnect_button")
+menu_frame:add(tgl.Button:new("Set Domain",setdomain,tgl.Pos2:new(15,8),white),"setdomain_button")
+menu_frame:add(tgl.Button:new("Ping Node",nping,tgl.Pos2:new(3,9),white),"nping_button")
+menu_frame:add(tgl.Button:new("Ping Client",cping,tgl.Pos2:new(15,9),white),"cping_button")
 function menu_frame:main() end
 local window=tui.window_outlined(app_size,"CMTUI",tgl.defaults.boxes.double)
 window:add(menu_frame,"menu_frame")
