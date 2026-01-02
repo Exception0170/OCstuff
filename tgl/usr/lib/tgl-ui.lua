@@ -3,7 +3,7 @@ local tgl=require("tgl")
 local event=require("event")
 local unicode=require("unicode")
 local tui={}
-tui.ver="1.2"
+tui.ver="1.2.2"
 --moved from tgl.defaults
 
 ---Checkbox object
@@ -102,7 +102,7 @@ end
 function tui.Progressbar:render()
   local fill=math.floor(self.width*self.value)
   self.text=string.rep(tgl.defaults.chars.full,fill)..string.rep(" ",self.width-fill)
-  tgl.sys.rendeerer:set(self.pos2,self.text,self.col2,self.z_index)
+  tgl.sys.renderer:set(self.pos2,self.text,self.col2,self.z_index)
 end
 ---Set progressbar to percentage
 ---@param num number Percent from 0 to 1
@@ -131,6 +131,7 @@ function tui.window(size2,title,barcol,framecol)
   local close_button=tgl.EventButton(" X ","close"..title,nil,tgl.Pos2:new(size2.sizeX-2,1),tgl.defaults.colors2.close)
   local title_text=tgl.Text:new(title,barcol,tgl.Pos2:new((size2.sizeX-unicode.wlen(title))/2,1))
   local topbar=tgl.Frame:new({title_text=title_text,close_button=close_button},tgl.Size2:new(1,1,size2.sizeX,1),barcol)
+  topbar.ignoreOpen=true
   local frame=tgl.Frame:new({topbar=topbar},size2,framecol)
   return frame
 end
@@ -151,6 +152,7 @@ function tui.window_outlined(size2,title,borders,barcol,framecol)
   local close_button=tgl.EventButton(" X ","close"..title,nil,tgl.Pos2:new(size2.sizeX-2,1),tgl.defaults.colors2.close)
   local title_text=tgl.Text:new(title,barcol,tgl.Pos2:new((size2.sizeX-unicode.wlen(title))/2,1))
   local topbar=tgl.Frame:new({title_text=title_text,close_button=close_button},tgl.Size2:new(1,1,size2.sizeX,1),barcol)
+  topbar.ignoreOpen=true
   local frame=tgl.Frame:new({topbar=topbar},size2,framecol)
   frame.borders=borders
   return frame
@@ -162,7 +164,7 @@ end
 ---@param text? any 
 ---@param barcol? tgl.Color2 Color2 of topbar frame
 ---@param framecol? tgl.Color2 of window background
----@return Frame
+---@return tgl.Frame
 function tui.notificationWindow(size2,title,text,barcol,framecol)
   if not size2 then return nil end
   if not title then title="Untitled" end
@@ -174,6 +176,7 @@ function tui.notificationWindow(size2,title,text,barcol,framecol)
   local text_label=tgl.Text:new(text,framecol,tgl.Pos2:new((size2.sizeX-unicode.wlen(text))/2,3))
   local title_text=tgl.Text:new(title,barcol,tgl.Pos2:new((size2.sizeX-unicode.wlen(title))/2,1))
   local topbar=tgl.Frame:new({title_text=title_text},tgl.Size2:new(1,1,size2.sizeX,1),barcol)
+  topbar.ignoreOpen=true
   local frame=tgl.Frame:new({topbar=topbar,icon=info_icon,text=text_label,close_button=close_button},size2,framecol)
   return frame
 end
@@ -186,26 +189,41 @@ end
 ---@param margin? integer minimal margin from screen edges
 ---@return tgl.Size2
 function tui.autoSize2(minW, minH, maxW, maxH, margin)
-  margin = margin or 4   -- distance from edges
-  local screenW = tgl.defaults.screenSizeX
-  local screenH = tgl.defaults.screenSizeY
+  margin=margin or 4   -- distance from edges
+  local screenW=tgl.defaults.screenSizeX
+  local screenH=tgl.defaults.screenSizeY
   -- target size is 80% of screen, but not smaller than `min`
-  local targetW = math.floor(screenW * 0.8)
-  local targetH = math.floor(screenH * 0.6)
+  local targetW=math.floor(screenW*0.8)
+  local targetH=math.floor(screenH*0.6)
   -- clamp to min/max if provided
-  targetW = math.max(targetW, minW)
-  targetH = math.max(targetH, minH)
-  if maxW then targetW = math.min(targetW, maxW) end
-  if maxH then targetH = math.min(targetH, maxH) end
+  targetW=math.max(targetW,minW)
+  targetH=math.max(targetH,minH)
+  if maxW then targetW=math.min(targetW,maxW) end
+  if maxH then targetH=math.min(targetH,maxH) end
   -- ensure margins are respected
-  targetW = math.min(targetW, screenW - 2 * margin)
-  targetH = math.min(targetH, screenH - 2 * margin)
+  targetW=math.min(targetW,screenW-2*margin)
+  targetH=math.min(targetH,screenH-2*margin)
   -- centered position
-  local posX = math.floor((screenW - targetW) / 2)
-  local posY = math.floor((screenH - targetH) / 2)
-  return tgl.Size2:newFromSize(posX, posY, targetW, targetH)
+  local posX=math.floor((screenW-targetW)/2)
+  local posY=math.floor((screenH-targetH)/2)
+  return tgl.Size2:newFromSize(posX,posY,targetW,targetH)
 end
-
+---Centers given size2 at targetSize2 (aligns their centers)
+---@param size2 tgl.Size2
+---@param targetSize2 tgl.Size2
+---@return tgl.Size2
+function tui.centerSize2atSize2(size2,targetSize2)
+  if not size2 or not targetSize2 then return nil end
+  local targetCenterX=(targetSize2.x1+targetSize2.x2)/2
+  local targetCenterY=(targetSize2.y1+targetSize2.y2)/2
+  local sizeCenterX=(size2.x1+size2.x2)/2
+  local sizeCenterY=(size2.y1+size2.y2)/2
+  local offsetX=targetCenterX-sizeCenterX
+  local offsetY=targetCenterY-sizeCenterY
+  local newX1=math.floor(size2.x1+offsetX+0.5)  -- +0.5 for rounding
+  local newY1=math.floor(size2.y1+offsetY+0.5)
+  return tgl.Size2:newFromSize(newX1,newY1,size2.sizeX,size2.sizeY)
+end
 ---Select a file from filesystem
 ---@param size2? tgl.Size2 Defaults to `tui.autoSize2(40,20)`
 ---@param startFolder? string starting folder, defaults to pwd
