@@ -43,7 +43,7 @@ end
 
 ---If enabled, Ctrl+R will reset
 function tgl.Renderer.resetKeybind(_,_,key1,key2)
-  if key1==tgl.sys.resetKeybind then
+  if key1==tgl.sys.resetKeybind and tgl.sys.renderer.resetKeybindEnabled then
     tgl.sys.renderer:resetCursor()
   end
 end
@@ -56,14 +56,14 @@ function tgl.Renderer:start()
       self:render()
     end
   end,math.huge)
-  if self.resetKeybindEnabled then event.listen("key_down",self.resetKeybind) end
+  event.listen("key_down",self.resetKeybind)
 end
 function tgl.Renderer:stop() self.stopped=true end --??
 function tgl.Renderer:resume() self.stopped=false end
 function tgl.Renderer:finish()
   if not self.timer then return false end
   self:freeAllBuffers()
-  if self.resetKeybindEnabled then event.ignore("key_down",self.resetKeybind) end
+  event.ignore("key_down",self.resetKeybind)
   return event.cancel(self.timer)
 end
 function tgl.Renderer:addCmd(cmd)

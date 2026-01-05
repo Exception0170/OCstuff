@@ -49,7 +49,47 @@ end
 ---@return tgl.Color2
 function tgl.getCurrentColor2()
   local r=tgl.sys.renderer
-  return tgl.Color2:new(r.gpu.getForeground(),r.gpu.getBackground())
+  local fg_col,fg_ispalette=r.gpu.getForeground()
+  local bg_col,bg_ispalette=r.gpu.getBackground()
+  if fg_ispalette and bg_ispalette then
+    return tgl.Color2:new(fg_col,bg_col,true)
+  elseif not fg_ispalette and not bg_ispalette then
+    return tgl.Color2:new(fg_col,bg_col)
+  else --fallback to regular colors
+    if fg_ispalette then
+      fg_col=r.gpu.getPaletteColor(fg_col)
+    else
+      bg_col=r.gpu.getPaletteColor(bg_col)
+    end
+    return tgl.Color2:new(fg_col,bg_col)
+  end
+end
+
+---Changes cursor color to given Color2
+---@param col2 tgl.Color2
+---@param ignore? boolean if function should ignore previous color
+---@return tgl.Color2|false|nil
+function tgl.changeToColor2(col2,ignore)
+  if not col2 then return false end
+  local r=tgl.sys.renderer
+  local old=nil
+  if not ignore then
+    old=tgl.getCurrentColor2()
+  end
+  if col2.is_palette then
+    local success=pcall(function()
+      r.gpu.setForeground(col2[1],true)
+      r.gpu.setBackground(col2[2],true)
+    end)
+    if not success then
+      tgl.util.log("Couldn't change to palette color2! indexes: "..tostring(col2[1]).." "..tostring(col2[2]),"Util")
+      return false
+    end
+    return old
+  end
+  r.gpu.setForeground(col2[1])
+  r.gpu.setBackground(col2[2])
+  return old
 end
 
 return tgl end

@@ -1,4 +1,3 @@
-local gpu=require("component").gpu
 local term=require("term")
 local unicode=require("unicode")
 return function(tgl)
@@ -107,19 +106,21 @@ end
 
 ---Color object, 1st elem is foreground color, 2nd is background color
 ---@class tgl.Color2
+---@field type string
+---@field is_palette boolean are colors palette indexes instead
 tgl.Color2={}
 tgl.Color2.__index=tgl.Color2
 ---@param col1? integer foreground color
 ---@param col2? integer background color
 ---@return tgl.Color2
-function tgl.Color2:new(col1,col2)
+function tgl.Color2:new(col1,col2,is_palette)
   if not col1 then col1=tgl.defaults.foregroundColor end
   if not col2 then col2=tgl.defaults.backgroundColor end
   col1=tonumber(col1)
   col2=tonumber(col2)
   if col1 and col2 then
     if col1>=0 and col1<16777216 and col2>=0 and col2<16777216 then
-      return setmetatable({col1,col2,type="Color2"},self)
+      return setmetatable({col1,col2,type="Color2",is_palette=is_palette},self)
     end
   end
   return nil
@@ -131,22 +132,6 @@ end
 
 function tgl.Color2.__tostring(c)
   return "Col2("..c[1]..";"..c[2]..")"
-end
-
----Changes cursor color to given Color2
----@param col2 tgl.Color2
----@param ignore? boolean if function should ignore previous color
----@return tgl.Color2|false|nil
-function tgl.changeToColor2(col2,ignore)
-  if not col2 then return false end
-  if not ignore then
-    local old=tgl.getCurrentColor2()
-    gpu.setForeground(col2[1])
-    gpu.setBackground(col2[2])
-    return old
-  end
-  gpu.setForeground(col2[1])
-  gpu.setBackground(col2[2])
 end
 
 ---Inverts foreground and background colors
