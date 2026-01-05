@@ -1,14 +1,7 @@
-0.7
 update zirnox
 tgl-img: render part of image
 
 0.8
-Single object renderer - all objects use it for rendering instead of gpu directly
-/usr/lib/tgl/* for library instead of single file
-stop using global objects and switch to tgl.*
-
-fix cmtui 
 InputField2
-screensave to vram?
-object dump - automated?
 RadioButtons
+selectmenu
