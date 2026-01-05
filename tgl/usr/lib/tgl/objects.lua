@@ -587,6 +587,9 @@ function tgl.ScreenSave:render()
     if ok then r:bufcopy(buf,0,self.size2,z) end
     r:freeBuffer(buf)
     r:resetCursor()
+    --weird!
+    local first=self.data[self.size2.x1][self.size2.y1]
+    r:setPoint(self.size2.x1,self.size2.y1,first[1],first[2])
   else
     tgl.util.log("Using on-screen renderer(slow)","ScreenSave/render")
     for x=self.size2.x1,self.size2.x2 do
@@ -771,7 +774,7 @@ function tgl.ScrollFrame:render()
   r:fill(self.size2," ",self.col2)
   --scrollbar
   if self.showScroll and self.maxScroll > 0 then
-    local scrollbar_x = self.size2.x2-1
+    local scrollbar_x = self.size2.x2
     -- Calculate scrollbar metrics
     local visible_height = self.size2.sizeY
     local total_height = visible_height + self.maxScroll

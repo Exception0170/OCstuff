@@ -71,7 +71,7 @@ function tgl.util.log(text,mod)
   if tgl.debug then
     local c=require("component")
     if not mod then mod="MAIN" end
-    local s="["..require("computer").uptime().."][TGL]["..mod.."] "..text
+    local s="["..require("computer").uptime().."][TGL]["..mod.."] "..tostring(text)
     if c.isAvailable("ocelot") then
       c.ocelot.log(s)
     elseif tgl.logfile~="" then
