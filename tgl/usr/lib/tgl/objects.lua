@@ -539,13 +539,22 @@ end
 ---Saves a box from screen(TODO:REWORK)
 ---@class tgl.ScreenSave:tgl.BoxObject
 ---@field data table
+---@field buf integer|nil
 ---@field save function
 ---@field dump function
 tgl.ScreenSave=setmetatable({},{__index=tgl.BoxObject})
 tgl.ScreenSave.__index=tgl.ScreenSave
 ---Save the chars from `self.size2` region to `self.data`
-function tgl.ScreenSave:save()
+function tgl.ScreenSave:save(useBuffer)
   local r=tgl.sys.renderer
+  if useBuffer then
+    local success,buf=r:allocateBuffer(self.size2.sizeX,self.size2.sizeY)
+    if success then
+      self.buf=buf
+      r:bufcopy(0,buf,tgl.Size2:new(1,1,self.size2.sizeX,self.size2.sizeY),self.z_index,self.size2.pos1)
+      return
+    end
+  end
   for x=self.size2.x1,self.size2.x2 do
     self.data[x]={}
     for y=self.size2.y1,self.size2.y2 do
@@ -554,19 +563,31 @@ function tgl.ScreenSave:save()
     end
   end
 end
-function tgl.ScreenSave:new(size2)
+---Save an area from screen
+---@param size2 tgl.Size2
+---@param useBuffer boolean
+---@return tgl.ScreenSave
+function tgl.ScreenSave:new(size2,useBuffer)
   if not size2 then size2=tgl.Size2:newFromPoint(1,1,tgl.defaults.screenSizeX,tgl.defaults.screenSizeY) end
-  local obj=setmetatable({},tgl.ScreenSave)
+  if not useBuffer then useBuffer=true end
+  local obj=setmetatable({},self)
   obj.z_index=0
   obj.size2=size2
   obj.data={}
+  obj.buf=0
   obj.type="ScreenSave"
-  obj:save()
+  obj:save(useBuffer)
   return obj
 end
 function tgl.ScreenSave:render()
   local r=tgl.sys.renderer
   local z=self.z_index
+  if self.buf>0 then --buffered copy
+    r:bufcopy(self.buf,0,self.size2,self.z_index)
+    r:freeBuffer(self.buf)
+    r:resetCursor()
+    return
+  end
   local success,buf=r:allocateBuffer(self.size2.sizeX,self.size2.sizeY)
   if success then
     local buf_x=1
