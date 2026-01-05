@@ -3,7 +3,7 @@ local tgl=require("tgl")
 local event=require("event")
 local unicode=require("unicode")
 local tui={}
-tui.ver="1.2.2"
+tui.ver="1.2.3"
 --moved from tgl.defaults
 
 ---Checkbox object
@@ -221,6 +221,19 @@ function tui.centerSize2atSize2(size2,targetSize2)
   local offsetX=targetCenterX-sizeCenterX
   local offsetY=targetCenterY-sizeCenterY
   local newX1=math.floor(size2.x1+offsetX+0.5)  -- +0.5 for rounding
+  local newY1=math.floor(size2.y1+offsetY+0.5)
+  return tgl.Size2:newFromSize(newX1,newY1,size2.sizeX,size2.sizeY)
+end
+---Centers given size2 at pos2
+---@param size2 tgl.Size2
+---@param pos2 tgl.Pos2
+---@return tgl.Size2
+function tui.centerSize2atPos2(size2,pos2)
+  local sizeCenterX=(size2.x1+size2.x2)/2
+  local sizeCenterY=(size2.y1+size2.y2)/2
+  local offsetX=pos2.x-sizeCenterX
+  local offsetY=pos2.y-sizeCenterY
+  local newX1=math.floor(size2.x1+offsetX+0.5)
   local newY1=math.floor(size2.y1+offsetY+0.5)
   return tgl.Size2:newFromSize(newX1,newY1,size2.sizeX,size2.sizeY)
 end
