@@ -1,0 +1,5 @@
+{
+  "sizeX": -1, //-1 for full
+  "sizeY": -1, //-1 for full
+  "screenUUID": "default" //systemuuid
+}
