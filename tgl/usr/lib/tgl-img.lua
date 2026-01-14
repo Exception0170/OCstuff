@@ -3,7 +3,7 @@
 local bit32=require("bit32")
 local tgl=require("tgl")
 local tmg={}
-tmg.ver="1.4"
+tmg.ver="1.5"
 tmg.enableCompressing=true --Enable compressing when saving?
 tmg.autoPreload=true --Automatically preload
 tmg.cache={} --TODO: add cache for frequent colors
@@ -23,10 +23,16 @@ tmg.chars[132]="▘"
 tmg.chars[132]="▝"
 
 ---Gets char in extended mode
----@param byte integer
+---@param char string
 ---@return string
-function tmg.getExtendedChar(byte)
-  if byte<128 and byte>=32 then return string.char(byte)
+function tmg.getExtendedChar(char)
+  local byte=0
+  if string.len(char)<2 then
+    byte=string.byte(char)
+  else
+    return char
+  end
+  if byte<128 and byte>=32 then return char
   else
     if tmg.chars[byte] then return tmg.chars[byte]
     else return "" end
@@ -238,6 +244,8 @@ function tmg.rgbToIndex(color)
 
   -- If color is greyscale, place in greys.
   if r==g and g==b then
+    if r==0 then return 0 end
+    if r==255 then return 239 end
     -- find nearest grey
     local giGrey = tmg.nearest(r, tmg.greys)
     return 240+giGrey
@@ -322,6 +330,27 @@ function tmg.byteToCol2(b)
   return tgl.Color2:new(tmg.palette4bitToColor(b//16),tmg.palette4bitToColor(b%16))
 end
 
+---Convert Screen pixels to rawdata
+---@param size2 tgl.Size2
+---@param depth integer
+---@param extended boolean default: true
+---@return string
+function tmg.dumpScreenToRaw(size2,depth,extended)
+  if not size2 or not depth then return "" end
+  if not extended then extended=true end
+  local res=""
+  local r=tgl.sys.renderer
+  for y=size2.y1,size2.y2 do
+    for x=size2.x1,size2.x2 do
+      local char,col2=r:getPoint(x,y)
+      if extended then res=res..char end
+      if depth==4 then res=res..tmg.col2toChar4bit(col2)
+      else res=res..tmg.col2ToChars(col2) end
+    end
+  end
+  return res
+end
+
 ---Image object
 ---@class tmg.Image:tgl.BoxObject
 ---@field depth integer Bit depth of color, 4 or 8
@@ -364,6 +393,7 @@ function tmg.Image:preload()
     return false
   end
   local pos=1
+  local byteOffset=0
   local maxpos=#self.rawdata
   local x=self.size2.x1
   local y=self.size2.y1
@@ -376,14 +406,15 @@ function tmg.Image:preload()
       local c
       local char=tmg.char
       if self.extended==true then
-        char=tmg.getExtendedChar(self.rawdata(pos))
+        char=tmg.getExtendedChar(require("unicode").sub(self.rawdata,pos,pos))
         pos=pos+1
+        byteOffset=byteOffset+string.len(char)-1
       end
       if self.depth==4 then
-        c=tmg.byteToCol2(self.rawdata:byte(pos))
+        c=tmg.byteToCol2(self.rawdata:byte(pos+byteOffset))
         pos=pos+1
       else --8bit
-        c=tmg.bytesToCol2(self.rawdata:byte(pos),self.rawdata:byte(pos+1))
+        c=tmg.bytesToCol2(self.rawdata:byte(pos+byteOffset),self.rawdata:byte(pos+1+byteOffset))
         pos=pos+2
       end
       r:setPoint(ix,iy,char,c,self.z_index,false,buf)
@@ -435,6 +466,7 @@ end
 ---@return boolean
 function tmg.Image:save(filename)
   if not self then return false end
+  if not filename then filename=self.name..".tmg" end
   local file=io.open(filename,"w")
   if not file then return false end
   --compression
@@ -504,6 +536,7 @@ function tmg.Image:render()
   ---rawrender
   if not self.rawdata then return false end
   local pos=1
+  local byteOffset=0
   local maxpos=#self.rawdata
   local x=self.size2.x1
   local y=self.size2.y1
@@ -516,20 +549,37 @@ function tmg.Image:render()
       local c
       local char=tmg.char
       if self.extended==true then
-        char=tmg.getExtendedChar(self.rawdata(pos))
+        char=tmg.getExtendedChar(require("unicode").sub(self.rawdata,pos,pos))
         pos=pos+1
+        byteOffset=byteOffset+string.len(char)-1
       end
       if self.depth==4 then
-        c=tmg.byteToCol2(self.rawdata:byte(pos))
+        c=tmg.byteToCol2(self.rawdata:byte(pos+byteOffset))
         pos=pos+1
       else --8bit
-        c=tmg.bytesToCol2(self.rawdata:byte(pos),self.rawdata:byte(pos+1))
+        c=tmg.bytesToCol2(self.rawdata:byte(pos+byteOffset),self.rawdata:byte(pos+byteOffset+1))
         pos=pos+2
       end
       r:setPoint(x+ix-1,y+iy-1,char,c,self.z_index)
     end
   end
   return true
+end
+
+---Saves screen area to .tmg Image
+---@param size2 tgl.Size2
+---@param depth? integer default: 8bit
+---@param name? string defaults: Untitled
+---@param extended? boolean defaults: true
+---@return tmg.Image
+function tmg.saveScreenToTmg(size2,name,depth,extended)
+  if not size2 then return nil end
+  if not depth then depth=8 end
+  if not extended then extended=true end
+  local img=tmg.Image:new(size2,depth,name)
+  img.extended=extended
+  img.rawdata=tmg.dumpScreenToRaw(size2,depth,extended)
+  return img
 end
 return tmg
 --[[
