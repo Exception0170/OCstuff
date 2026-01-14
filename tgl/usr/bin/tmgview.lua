@@ -17,21 +17,32 @@ local function view(filename)
     tgl.cprint("Couldn't open file: "..filename)
     return
   end
-  local img=tmg.Image:load(filename)
-  if not img then
-    tgl.cprint("Couldn't open image")
-    return
+  local success,msg=xpcall(function()
+    local img=tmg.Image:load(filename)
+    if not img then
+      tgl.cprint("Couldn't open image")
+      return
+    end
+    term.clear()
+    img:render()
+    require("event").pull("key_down")
+    term.clear()
+    tgl.cprint("Image stats",tgl.Color2:new(tgl.defaults.colors16.yellow))
+    print("Name: "..img.name)
+    if img.extended then
+      print("Shape: "..img.size2.sizeX.."x"..img.size2.sizeY)
+    else
+      print("Shape: "..img.size2.sizeX.."x"..img.size2.sizeY.."("..img.size2.sizeX.."x"..(img.size2.sizeY*2)..")")
+    end
+    print("Color depth: "..img.depth.."bit")
+    print("Extended: "..tostring(img.extended))
+    print("")
+  end,function(err) return debug.traceback("Error: "..err) end)
+  if not success then
+    tgl.cprint("Unexpected error occured, possibly corrupted file:")
+    tgl.cprint(msg)
+    tgl.sys.renderer:resetCursor()
   end
-  term.clear()
-  img:render()
-  require("event").pull("key_down")
-  term.clear()
-  tgl.cprint("Image stats",tgl.Color2:new(tgl.defaults.colors16.yellow))
-  print("Name: "..img.name)
-  print("Shape: "..img.size2.sizeX.."x"..img.size2.sizeY.."("..img.size2.sizeX.."x"..(img.size2.sizeY*2)..")")
-  print("Color depth: "..img.depth.."bit")
-  print("Extended: "..tostring(img.extended))
-  print("")
 end
 
 local args=require("shell").parse(...)
