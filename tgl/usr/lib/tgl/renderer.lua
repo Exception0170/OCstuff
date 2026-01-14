@@ -88,7 +88,6 @@ end
 function tgl.Renderer:execCmd(cmd)
   if not cmd then return false end
   if not cmd.cmd then return false end
-  if cmd.col2 then tgl.changeToColor2(cmd.col2,true) end
   if cmd.buffer then
     if cmd.buffer~=self.activeBuffer then
       if not self.gpu.buffers()[cmd.buffer] and cmd.buffer~=0 then
@@ -100,6 +99,7 @@ function tgl.Renderer:execCmd(cmd)
       end
     end
   end
+  if cmd.col2 then tgl.changeToColor2(cmd.col2,true) end
   if cmd.cmd=="set" then
     if not cmd.vertical then
       return self.gpu.set(cmd.pos2.x,cmd.pos2.y,cmd.value)

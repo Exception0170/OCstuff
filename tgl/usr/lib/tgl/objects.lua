@@ -565,7 +565,7 @@ function tgl.ScreenSave:save(useBuffer)
 end
 ---Save an area from screen
 ---@param size2 tgl.Size2
----@param useBuffer boolean
+---@param useBuffer? boolean
 ---@return tgl.ScreenSave
 function tgl.ScreenSave:new(size2,useBuffer)
   if not size2 then size2=tgl.Size2:newFromPoint(1,1,tgl.defaults.screenSizeX,tgl.defaults.screenSizeY) end
@@ -608,9 +608,6 @@ function tgl.ScreenSave:render()
     if ok then r:bufcopy(buf,0,self.size2,z) end
     r:freeBuffer(buf)
     r:resetCursor()
-    --weird!
-    local first=self.data[self.size2.x1][self.size2.y1]
-    r:setPoint(self.size2.x1,self.size2.y1,first[1],first[2])
   else
     tgl.util.log("Using on-screen renderer(slow)","ScreenSave/render")
     for x=self.size2.x1,self.size2.x2 do
@@ -660,9 +657,24 @@ function tgl.ScreenSave:load(filename)
 end
 
 ---Display the frame, enableAll.
----if object has `ignoreOpen=true`, then it is not opened recursively
 ---@param ignore_ss? boolean Ignore saving screen behind frame
 function tgl.Frame:open(ignore_ss)
+  self.hidden=false
+  if not ignore_ss then self.ss=tgl.ScreenSave:new(self.size2) end
+  self:render()
+  self:enableAll()
+end
+---Closes frame and disableAll. If screensave was stored, displayes saved screen
+function tgl.Frame:close()
+  self.hidden=true
+  self:disableAll()
+  if self.ss then self.ss:render() self.ss=nil end
+end
+
+---Display the frame, enableAll.
+---if object has `ignoreOpen=true`, then it is not opened recursively
+---@param ignore_ss? boolean Ignore saving screen behind frame
+function tgl.Frame:openAll(ignore_ss)
   self.hidden=false
   if not ignore_ss then self.ss=tgl.ScreenSave:new(self.size2) end
   for _,object in pairs(self.objects) do
@@ -674,7 +686,7 @@ function tgl.Frame:open(ignore_ss)
   self:enableAll()
 end
 ---Closes frame and disableAll. If screensave was stored, displayes saved screen
-function tgl.Frame:close()
+function tgl.Frame:closeAll()
   self.hidden=true
   self:disableAll()
   if self.ss then self.ss:render() self.ss=nil end

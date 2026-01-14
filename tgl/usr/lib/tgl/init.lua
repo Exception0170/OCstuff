@@ -1,6 +1,6 @@
 ---TGLv8 init file
 local tgl={}
-tgl.version="0.8.03"
+tgl.version="0.8.04"
 tgl=dofile("/usr/lib/tgl/core.lua")(tgl)
 tgl=dofile("/usr/lib/tgl/defaults.lua")(tgl)
 tgl=dofile("/usr/lib/tgl/renderer.lua")(tgl)
