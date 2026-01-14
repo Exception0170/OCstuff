@@ -167,6 +167,8 @@ class TMGConverter:
         """Convert RGB to 8-bit palette index"""
         # Check if grayscale
         if r == g == b:
+            if r == 0: return 0
+            if r == 255: return 239
             grey_idx = self.nearest(r, self.greys)
             return 240 + grey_idx
         
@@ -286,7 +288,7 @@ class TMGConverter:
                 f.write("\n".encode())
                 f.write(f"{name}\n".encode())
                 f.write(f"{width}\n".encode())
-                f.write(f"{height}\n".encode())
+                f.write(f"{height//2}\n".encode()) #since pixel size is 1/2 of actual y
                 # Raw data
                 f.write(compressed_data)
             
