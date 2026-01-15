@@ -419,6 +419,7 @@ function tmg.Image:preload()
       end
       r:setPoint(ix,iy,char,c,self.z_index,false,buf)
     end
+    if iy%20==0 then os.sleep(0.05) end --memory overload saafeguard
   end
   self.preloaded=true
   self.preload_buf=buf
