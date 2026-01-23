@@ -5,7 +5,7 @@ tgl.debug=true
 tgl.logfile="" --file to log
 tgl.sys={}
 ---Classes with `:enable()` and `:disable()` methods
-tgl.sys.enableTypes={Button=true,EventButton=true,CheckBox=true,InputField=true,ScrollFrame=true}
+tgl.sys.enableTypes={Button=true,EventButton=true,InputField=true,ScrollFrame=true}
 ---Classes with `:enableAll()` and `:disableAll()` methods 
 tgl.sys.enableAllTypes={Frame=true,Bar=true,ScrollFrame=true}
 ---Classes with `:open()` and `:close()` methods
