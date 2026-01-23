@@ -3,7 +3,7 @@ local tgl=require("tgl")
 local event=require("event")
 local unicode=require("unicode")
 local tui={}
-tui.ver="1.2.3"
+tui.ver="1.3"
 --moved from tgl.defaults
 
 ---Checkbox object
@@ -32,6 +32,7 @@ function tui.CheckBox:new(pos2,col2,width,char)
   obj.z_index=0
   obj.width=width or 1
   obj.text=string.rep(" ",1)
+  obj.checkRendered=true
   obj.handler=function(_,_,x,y)
     if x>=obj.pos2.x
     and x<obj.pos2.x+unicode.wlen(obj.text)
@@ -114,6 +115,120 @@ function tui.Progressbar:setValue(num,render)
   self.value=num
   if render then self:render() end
   return true
+end
+
+---@class tui.SelectMenu:tgl.LineObjectInteractable
+---@field text string
+---@field width integer
+---@field options string[]
+---@field value string
+---@field handler function
+---@field opened boolean
+---@field closeOnDefocus boolean
+---@field icons string icons to use
+tui.SelectMenu=setmetatable({},{__index=tgl.LineObjectInteractable})
+tui.SelectMenu.__index=tui.SelectMenu
+---@param pos2 tgl.Pos2
+---@param width integer
+---@param col2 tgl.Color2
+---@param options string[]
+---@return tui.SelectMenu
+function tui.SelectMenu:new(pos2,width,col2,options)
+  if not pos2 or not width or not col2 then return end
+  local obj=setmetatable({},self)
+  obj.type="SelectMenu"
+  obj.z_index=0
+  obj.pos2=pos2
+  obj.width=width
+  obj.col2=col2
+  obj.options=options or {"Select","Empty1","Empty2"}
+  obj.value=obj.options[1]
+  obj.text=obj.value
+  obj.checkRendered=true
+  obj.opened=false
+  obj.closeOnDefocus=true
+  obj.icons="▾▴"
+  obj.handler=function(_,_,x,y)
+    if x>=obj.pos2.x and x<obj.pos2.x+obj.width and y==obj.pos2.y
+    and tgl.util.pointInSize2(x,y,tgl.sys.activeArea) then
+      --open/close
+      if obj.checkRendered then
+        if tgl.util.getLineMatched(obj.pos2,obj.text,obj.col2)/unicode.wlen(obj.value)<0.6 then
+          return
+        end
+      end
+      if obj.opened==false then
+        obj.opened=true
+        obj:showOptions()
+        obj:render()
+      else
+        obj.opened=false
+        obj:hideOptions()
+        obj:render()
+      end
+    elseif obj.opened==true then
+      if x>=obj.pos2.x and x<obj.pos2.x+obj.width
+      and y>obj.pos2.y and y<=obj.pos2.y+#obj.options
+      and tgl.util.pointInSize2(x,y,tgl.sys.activeArea) then
+        --click
+        local chosen=y-obj.pos2.y
+        if not obj.options[chosen] then
+          tgl.util.log("Fatal: no such option: '"..chosen.."', undefined behavior!","SelectMenu/handler")
+        else
+          obj.value=obj.options[chosen]
+        end
+        obj.opened=false
+        obj:hideOptions()
+        obj:render()
+      elseif obj.closeOnDefocus then
+        obj.opened=false
+        obj:hideOptions()
+        obj:render()
+      end
+    end
+  end
+  return obj
+end
+function tui.SelectMenu:showOptions()
+  if self.hidden then return end
+  local options_size2=tgl.Size2:new(self.pos2.x,self.pos2.y+1,self.width,#self.options)
+  self.ss=tgl.ScreenSave:new(options_size2)
+  local r=tgl.sys.renderer
+  r:fill(options_size2," ",self.col2,self.z_index)
+  for i=1,#self.options do
+    local text=self.options[i]
+    if unicode.wlen(text)>self.width then
+      text=unicode.sub(text,1,self.width-2)..".."
+    end
+    r:setPoint(self.pos2.x,self.pos2.y+i,text,self.col2,self.z_index)
+  end
+end
+function tui.SelectMenu:hideOptions()
+  if self.ss then
+    self.ss:render()
+    self.ss=nil
+  end
+end
+function tui.SelectMenu:render()
+  if self.hidden then return end
+  local icon=""
+  if self.opened then icon=unicode.sub(self.icons,2,2)
+  else icon=unicode.sub(self.icons,1,1) end
+  self.text=self.value
+  if unicode.wlen(self.text)>=self.width then
+    self.text=unicode.sub(self.text,1,self.width-3)..".."..icon
+  else
+    self.text=self.text..string.rep(" ",self.width-unicode.wlen(self.text)-1)..icon
+  end
+  tgl.sys.renderer:set(self.pos2,self.text,self.col2,self.z_index)
+end
+function tui.SelectMenu:enable()
+  self.enabled=true
+  event.listen("touch",self.handler)
+end
+function tui.SelectMenu:disable()
+  self.enabled=false
+  event.ignore("touch",self.handler)
 end
 
 ---Create a simple window with a topbar, title and a close button.
@@ -445,6 +560,10 @@ end
 function tui.selectColor2Palette()
 
 end
+
+--add new objects
+tgl.sys.enableTypes["CheckBox"]=true
+tgl.sys.enableTypes["SelectMenu"]=true
 return tui
 --[[
 action window-> return result
