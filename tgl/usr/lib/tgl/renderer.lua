@@ -122,6 +122,10 @@ function tgl.Renderer:execCmd(cmd)
     return true
   elseif cmd.cmd=="freebuffer" then
     return self.gpu.freeBuffer(cmd.id)
+  elseif cmd.cmd=="setbuffer" then
+    self.gpu.setActiveBuffer(cmd.id)
+    self.activeBuffer=cmd.id
+    return true
   elseif cmd.cmd=="freebuffers" then
     self.gpu.freeAllBuffers() return true
   else
@@ -322,6 +326,15 @@ function tgl.Renderer:freeBuffer(id)
     self:addCmd({cmd="freebuffer",id=id})
     return true
   end
+  return false
+end
+
+function tgl.Renderer:setBuffer(id)
+  if id>=0 and self:buffers()[id] then
+    self:addCmd({cmd="setbuffer",id=id})
+    return true
+  end
+  tgl.util.log("Trying to set unvalid buffer: "..tostring(id),"Renderer")
   return false
 end
 

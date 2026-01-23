@@ -740,7 +740,7 @@ function tgl.ScrollFrame:new(objects,size2,col2,scrollcol2)
         end
       end
     else
-      if obj.showScroll and x==obj.size2.x2-1 and
+      if obj.showScroll and x==obj.size2.x2 and
       y>=obj.size2.y1 and y<=obj.size2.y2 then
         obj.isDragging=true
         obj.lastDragY=y
@@ -838,6 +838,24 @@ function tgl.ScrollFrame:render()
       end
     end
   end
+end
+
+function tgl.ScrollFrame:WIPrender()
+  if self.hidden then return end
+  local r=tgl.sys.renderer
+  if not self.buf then
+    local success,buf=r:allocateBuffer(self.size2.sizeX,self.size2.sizeY+self.maxScroll)
+    if not success then
+      --default
+      self:renderOld()
+      return
+    end
+    self.buf=buf
+  end
+  r:setBuffer(self.buf)
+  self:renderOld()
+  r:setBuffer(0)
+  r:bufcopy(self.buf,0,self.size2,self.z_index)
 end
 
 function tgl.ScrollFrame:enable()
