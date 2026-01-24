@@ -1,5 +1,4 @@
 local term=require("term")
-local unicode=require("unicode")
 return function(tgl)
 tgl.debug=true
 tgl.logfile="" --file to log
@@ -89,6 +88,10 @@ function tgl.util.printColors16(nextLine)
     if not nextLine then term.write(" ") end
   end
   if not nextLine then term.write("\n") end
+end
+---Alias for term.clear()
+function tgl.util.clear()
+  term.clear()
 end
 
 function tgl.util.objectInfo(object)
