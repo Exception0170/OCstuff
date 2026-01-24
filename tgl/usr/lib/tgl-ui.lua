@@ -3,7 +3,7 @@ local tgl=require("tgl")
 local event=require("event")
 local unicode=require("unicode")
 local tui={}
-tui.ver="1.3"
+tui.ver="1.3.1"
 --moved from tgl.defaults
 
 ---Checkbox object
@@ -117,7 +117,7 @@ function tui.Progressbar:setValue(num,render)
   return true
 end
 
----@class tui.SelectMenu:tgl.LineObjectInteractable
+---@class tui.DropdownMenu:tgl.LineObjectInteractable
 ---@field text string
 ---@field width integer
 ---@field options string[]
@@ -126,17 +126,18 @@ end
 ---@field opened boolean
 ---@field closeOnDefocus boolean
 ---@field icons string icons to use
-tui.SelectMenu=setmetatable({},{__index=tgl.LineObjectInteractable})
-tui.SelectMenu.__index=tui.SelectMenu
+---@field eventName string event to fire
+tui.DropdownMenu=setmetatable({},{__index=tgl.LineObjectInteractable})
+tui.DropdownMenu.__index=tui.DropdownMenu
 ---@param pos2 tgl.Pos2
 ---@param width integer
 ---@param col2 tgl.Color2
 ---@param options string[]
----@return tui.SelectMenu
-function tui.SelectMenu:new(pos2,width,col2,options)
+---@return tui.DropdownMenu
+function tui.DropdownMenu:new(pos2,width,col2,options)
   if not pos2 or not width or not col2 then return end
   local obj=setmetatable({},self)
-  obj.type="SelectMenu"
+  obj.type="DropdownMenu"
   obj.z_index=0
   obj.pos2=pos2
   obj.width=width
@@ -148,6 +149,7 @@ function tui.SelectMenu:new(pos2,width,col2,options)
   obj.opened=false
   obj.closeOnDefocus=true
   obj.icons="▾▴"
+  obj.eventName=""
   obj.handler=function(_,_,x,y)
     if x>=obj.pos2.x and x<obj.pos2.x+obj.width and y==obj.pos2.y
     and tgl.util.pointInSize2(x,y,tgl.sys.activeArea) then
@@ -173,9 +175,12 @@ function tui.SelectMenu:new(pos2,width,col2,options)
         --click
         local chosen=y-obj.pos2.y
         if not obj.options[chosen] then
-          tgl.util.log("Fatal: no such option: '"..chosen.."', undefined behavior!","SelectMenu/handler")
+          tgl.util.log("Fatal: no such option: '"..chosen.."', undefined behavior!","DropdownMenu/handler")
         else
           obj.value=obj.options[chosen]
+          if obj.eventName~="" then
+            event.push(obj.eventName,obj.value)
+          end
         end
         obj.opened=false
         obj:hideOptions()
@@ -189,7 +194,7 @@ function tui.SelectMenu:new(pos2,width,col2,options)
   end
   return obj
 end
-function tui.SelectMenu:showOptions()
+function tui.DropdownMenu:showOptions()
   if self.hidden then return end
   local options_size2=tgl.Size2:new(self.pos2.x,self.pos2.y+1,self.width,#self.options)
   self.ss=tgl.ScreenSave:new(options_size2)
@@ -203,13 +208,13 @@ function tui.SelectMenu:showOptions()
     r:setPoint(self.pos2.x,self.pos2.y+i,text,self.col2,self.z_index)
   end
 end
-function tui.SelectMenu:hideOptions()
+function tui.DropdownMenu:hideOptions()
   if self.ss then
     self.ss:render()
     self.ss=nil
   end
 end
-function tui.SelectMenu:render()
+function tui.DropdownMenu:render()
   if self.hidden then return end
   local icon=""
   if self.opened then icon=unicode.sub(self.icons,2,2)
@@ -222,11 +227,11 @@ function tui.SelectMenu:render()
   end
   tgl.sys.renderer:set(self.pos2,self.text,self.col2,self.z_index)
 end
-function tui.SelectMenu:enable()
+function tui.DropdownMenu:enable()
   self.enabled=true
   event.listen("touch",self.handler)
 end
-function tui.SelectMenu:disable()
+function tui.DropdownMenu:disable()
   self.enabled=false
   event.ignore("touch",self.handler)
 end
@@ -563,7 +568,7 @@ end
 
 --add new objects
 tgl.sys.enableTypes["CheckBox"]=true
-tgl.sys.enableTypes["SelectMenu"]=true
+tgl.sys.enableTypes["DropdownMenu"]=true
 return tui
 --[[
 action window-> return result
