@@ -3,7 +3,7 @@ local tgl=require("tgl")
 local event=require("event")
 local unicode=require("unicode")
 local tui={}
-tui.ver="1.3.1"
+tui.ver="1.3.2"
 --moved from tgl.defaults
 
 ---Checkbox object
@@ -119,6 +119,7 @@ end
 
 ---@class tui.DropdownMenu:tgl.LineObjectInteractable
 ---@field text string
+---@field menuCol2 tgl.Color2
 ---@field width integer
 ---@field options string[]
 ---@field value string
@@ -127,14 +128,17 @@ end
 ---@field closeOnDefocus boolean
 ---@field icons string icons to use
 ---@field eventName string event to fire
+---@field defaultText string
 tui.DropdownMenu=setmetatable({},{__index=tgl.LineObjectInteractable})
 tui.DropdownMenu.__index=tui.DropdownMenu
 ---@param pos2 tgl.Pos2
 ---@param width integer
 ---@param col2 tgl.Color2
 ---@param options string[]
+---@param eventName? string
+---@param menuCol2? tgl.Color2
 ---@return tui.DropdownMenu
-function tui.DropdownMenu:new(pos2,width,col2,options)
+function tui.DropdownMenu:new(pos2,width,col2,options,eventName,menuCol2)
   if not pos2 or not width or not col2 then return end
   local obj=setmetatable({},self)
   obj.type="DropdownMenu"
@@ -142,6 +146,7 @@ function tui.DropdownMenu:new(pos2,width,col2,options)
   obj.pos2=pos2
   obj.width=width
   obj.col2=col2
+  obj.menuCol2=menuCol2 or col2
   obj.options=options or {"Select","Empty1","Empty2"}
   obj.value=obj.options[1]
   obj.text=obj.value
@@ -149,7 +154,8 @@ function tui.DropdownMenu:new(pos2,width,col2,options)
   obj.opened=false
   obj.closeOnDefocus=true
   obj.icons="▾▴"
-  obj.eventName=""
+  obj.eventName=eventName or ""
+  obj.defaultText=nil
   obj.handler=function(_,_,x,y)
     if x>=obj.pos2.x and x<obj.pos2.x+obj.width and y==obj.pos2.y
     and tgl.util.pointInSize2(x,y,tgl.sys.activeArea) then
@@ -199,13 +205,13 @@ function tui.DropdownMenu:showOptions()
   local options_size2=tgl.Size2:new(self.pos2.x,self.pos2.y+1,self.width,#self.options)
   self.ss=tgl.ScreenSave:new(options_size2)
   local r=tgl.sys.renderer
-  r:fill(options_size2," ",self.col2,self.z_index)
+  r:fill(options_size2," ",self.menuCol2,self.z_index)
   for i=1,#self.options do
     local text=self.options[i]
     if unicode.wlen(text)>self.width then
       text=unicode.sub(text,1,self.width-2)..".."
     end
-    r:setPoint(self.pos2.x,self.pos2.y+i,text,self.col2,self.z_index)
+    r:setPoint(self.pos2.x,self.pos2.y+i,text,self.menuCol2,self.z_index)
   end
 end
 function tui.DropdownMenu:hideOptions()
@@ -216,25 +222,96 @@ function tui.DropdownMenu:hideOptions()
 end
 function tui.DropdownMenu:render()
   if self.hidden then return end
-  local icon=""
-  if self.opened then icon=unicode.sub(self.icons,2,2)
-  else icon=unicode.sub(self.icons,1,1) end
-  self.text=self.value
-  if unicode.wlen(self.text)>=self.width then
-    self.text=unicode.sub(self.text,1,self.width-3)..".."..icon
+  if self.defaultText then
+    self.text=self.defaultText
   else
-    self.text=self.text..string.rep(" ",self.width-unicode.wlen(self.text)-1)..icon
+    local icon=""
+    if self.opened then icon=unicode.sub(self.icons,2,2)
+    else icon=unicode.sub(self.icons,1,1) end
+    self.text=self.value
+    if unicode.wlen(self.text)>=self.width then
+      self.text=unicode.sub(self.text,1,self.width-3)..".."..icon
+    else
+      self.text=self.text..string.rep(" ",self.width-unicode.wlen(self.text)-1)..icon
+    end
   end
   tgl.sys.renderer:set(self.pos2,self.text,self.col2,self.z_index)
 end
 function tui.DropdownMenu:enable()
+  if self.enabled==true or self.hidden==true then return end
   self.enabled=true
   event.listen("touch",self.handler)
 end
 function tui.DropdownMenu:disable()
   self.enabled=false
   event.ignore("touch",self.handler)
+  if self.opened==true then
+    self.opened=false
+    self.ss:unload()
+    self.ss=nil
+  end
 end
+
+--[[menuBar
+items={
+  {
+    "File",
+    {"open","close"}
+  },
+  {"Edit",{}},
+  ...
+}
+self.frames={
+{}
+}
+]]
+-- ---@class tui.MenuBar:tgl.LineObjectInteractable
+-- ---@field size2 tgl.Size2
+-- ---@field items table
+-- ---@field col2 tgl.Color2
+-- ---@field menuCol2 tgl.Color2
+-- ---@field closeOnDefocus boolean
+-- ---@field handler function
+-- ---@field eventName string
+-- ---@field frames table
+-- tui.MenuBar=setmetatable({},{__index=tgl.LineObjectInteractable})
+-- tui.MenuBar.__index=tui.MenuBar
+-- ---@param items table
+-- ---@param size2 tgl.Size2
+-- ---@param col2 tgl.Color2
+-- ---@param menuCol2? tgl.Color2
+-- ---@param eventName? string
+-- function tui.MenuBar:new(items,size2,col2,menuCol2,eventName)
+--   if not items or not size2 or not col2 then return end
+--   local obj=setmetatable({},self)
+--   obj.type="MenuBar"
+--   obj.z_index=0
+--   obj.size2=size2
+--   obj.col2=col2
+--   obj.items=items
+--   obj.menuCol2=menuCol2 or col2
+--   obj.eventName=eventName or "MenuBarEvent"
+--   obj.handler=function(_,_,x,y)
+    
+--   end
+--   --generate
+--   obj.frames={}
+
+-- end
+-- function tui.MenuBar:render()
+--   local r=tgl.sys.renderer
+--   r:fill(self.size2," ",self.col2,self.z_index)
+--   for item,_ in pairs(self.items) do end ---?
+-- end
+-- function tui.MenuBar:enable()
+--   if self.enabled==true or self.hidden==true then return end
+--   self.enabled=true
+--   event.listen("touch",self.handler)
+-- end
+-- function tui.MenuBar:disable()
+--   self.enabled=false
+--   event.ignore("touch",self.handler)
+-- end
 
 ---Create a simple window with a topbar, title and a close button.
 ---`window.objects.topbar.objects.close_button` fires `"close"..title` event.
