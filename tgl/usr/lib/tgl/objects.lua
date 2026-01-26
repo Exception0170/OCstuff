@@ -155,7 +155,7 @@ function tgl.Button:new(text,callback,pos2,color2)
   obj.pos2=pos2 or tgl.Pos2:new()
   obj.col2=color2 or tgl.Color2:new()
   obj.checkRendered=true -- check if button is on screen
-  obj.handler=function (_,_,x,y)
+  obj.handler=function (_,_,x,y,b)
     if x>=obj.pos2.x
     and x<obj.pos2.x+unicode.wlen(obj.text)
     and y==obj.pos2.y
@@ -169,7 +169,7 @@ function tgl.Button:new(text,callback,pos2,color2)
       if type(obj.onClick)=="function" then
         thread.create(obj.onClick):detach()
       end
-      local success,err=pcall(obj.callback)
+      local success,err=pcall(obj.callback,b)
       if not success then
         tgl.util.log("Button handler error: "..err,"Button/handler")
       end
@@ -182,7 +182,7 @@ function tgl.Button:new(text,callback,pos2,color2)
     obj.col2=invert
     obj:render()
     obj.col2=prev
-    os.sleep(.1)
+    os.sleep(.05)
     obj:render()
     obj:enable()
   end
@@ -578,6 +578,12 @@ function tgl.ScreenSave:new(size2,useBuffer)
   obj.type="ScreenSave"
   obj:save(useBuffer)
   return obj
+end
+function tgl.ScreenSave:unload()
+  if self.buf>0 then
+    tgl.sys.renderer:freeBuffer(self.buf)
+    self.buf=0
+  end
 end
 function tgl.ScreenSave:render()
   local r=tgl.sys.renderer
