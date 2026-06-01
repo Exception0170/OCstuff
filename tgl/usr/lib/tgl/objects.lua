@@ -34,6 +34,12 @@ tgl.LineObjectInteractable.__index=tgl.LineObjectInteractable
 ---@field col2 tgl.Color2
 tgl.BoxObject=setmetatable({},{__index=tgl.UIObject})
 tgl.BoxObject.__index=tgl.BoxObject
+---@param pos2 tgl.Pos2
+---@return boolean
+function tgl.BoxObject:moveToPos2(pos2)
+  if not pos2 then return false end
+  return self.size2:moveToPos2(pos2)
+end
 
 
 ---Single line text object
@@ -160,7 +166,7 @@ function tgl.Button:new(text,callback,pos2,color2)
     and x<obj.pos2.x+unicode.wlen(obj.text)
     and y==obj.pos2.y
     and tgl.util.pointInSize2(x,y,tgl.sys.activeArea) then
-      if self.text=="" then return end
+      if obj.text=="" then return end
       if obj.checkRendered then
         if tgl.util.getLineMatched(obj.pos2,obj.text,obj.col2)/unicode.wlen(obj.text)<0.6 then
           return
@@ -176,15 +182,20 @@ function tgl.Button:new(text,callback,pos2,color2)
     end
   end
   obj.onClick=function()
+    if obj.hidden or not obj.enabled then return end
     obj:disable()
-    local invert=tgl.Color2:new(obj.col2[2],obj.col2[1])
+    obj._clicking=true
     local prev=obj.col2
-    obj.col2=invert
+    obj.col2=tgl.Color2:new(obj.col2[2],obj.col2[1])
     obj:render()
     obj.col2=prev
     os.sleep(.05)
-    obj:render()
-    obj:enable()
+    if obj._clicking and not obj.hidden then
+      obj._clicking=nil
+      obj:render()
+      obj:enable()
+    end
+    obj._clicking=nil
   end
   return obj
 end
@@ -195,6 +206,7 @@ function tgl.Button:enable()
 end
 function tgl.Button:disable()
   self.enabled=false
+  self._clicking=nil  --cancel any pending onClick restore
   event.ignore("touch",self.handler)
 end
 function tgl.Button:render()
@@ -352,27 +364,460 @@ function tgl.InputField:disable()
   event.ignore("touch",self.handler)
 end
 
+---Vertical scrollbar, callback-based
+---@class tgl.Scrollbar:tgl.BoxObject
+---@field scroll integer
+---@field scrollSpeed integer
+---@field maxScroll integer
+---@field visibleSize integer height of the visible viewport
+---@field hitArea tgl.Size2 area responding to mouse wheel (default=size2)
+---@field onChange function|nil called with new scroll value
+---@field col2 tgl.Color2 fg=thumb(█) bg=track(space)
+---@field enabled boolean
+tgl.Scrollbar=setmetatable({},{__index=tgl.BoxObject})
+tgl.Scrollbar.__index=tgl.Scrollbar
+---@param size2 tgl.Size2 1 column wide
+---@param col2? tgl.Color2 fg=thumb color, bg=track color
+---@return tgl.Scrollbar
+function tgl.Scrollbar:new(size2,col2)
+  if type(size2)~="table" then return nil end
+  local obj=setmetatable({},self)
+  obj.type="Scrollbar"
+  obj.z_index=0
+  obj.size2=size2
+  obj.col2=col2 or tgl.Color2:new(tgl.defaults.colors16.lightgray,tgl.defaults.colors16.darkgray)
+  obj.scroll=0
+  obj.maxScroll=0
+  obj.scrollSpeed=1
+  obj.visibleSize=size2.sizeY
+  obj.hitArea=size2
+  obj.onChange=nil
+  obj.enabled=false
+  obj.scrollHandler=function(_,_,x,y,dir)
+    dir=dir*obj.scrollSpeed
+    if obj.maxScroll<=0 then return end
+    if not tgl.util.pointInSize2(x,y,obj.hitArea) then return end
+    obj:setScroll(obj.scroll-dir)
+  end
+  obj.touchHandler=function(_,_,x,y)
+    if obj.maxScroll<=0 then return end
+    if not (x==obj.size2.x1 and y>=obj.size2.y1 and y<=obj.size2.y2) then return end
+    local startY=y
+    local startScroll=obj.scroll
+    local trackH=obj.size2.sizeY
+    while true do
+      local id,_,_,dy=event.pullMultiple("drag","drop")
+      if id=="drop" then break end
+      obj:setScroll(startScroll+math.floor((dy-startY)*obj.maxScroll/trackH))
+    end
+  end
+  return obj
+end
+---@param n integer
+function tgl.Scrollbar:setScroll(n)
+  self.scroll=math.max(0,math.min(self.maxScroll,n))
+  if type(self.onChange)=="function" then self.onChange(self.scroll) end
+  local r=tgl.sys.renderer
+  r:stop()
+  self:render()
+  r:flush()
+end
+function tgl.Scrollbar:render()
+  if self.hidden then return end
+  local r=tgl.sys.renderer
+  r:fill(self.size2," ",self.col2,self.z_index)
+  if self.maxScroll>0 then
+    local trackH=self.size2.sizeY
+    local thumbH=math.max(1,math.floor(trackH*self.visibleSize/(self.visibleSize+self.maxScroll)))
+    local thumbY=math.floor(self.scroll*(trackH-thumbH)/self.maxScroll)
+    r:fill(tgl.Size2:newFromSize(self.size2.x1,self.size2.y1+thumbY,1,thumbH),"█",self.col2,self.z_index)
+  end
+end
+function tgl.Scrollbar:enable()
+  if self.enabled==true or self.hidden==true then return end
+  self.enabled=true
+  event.listen("scroll",self.scrollHandler)
+  event.listen("touch",self.touchHandler)
+end
+function tgl.Scrollbar:disable()
+  self.enabled=false
+  event.ignore("scroll",self.scrollHandler)
+  event.ignore("touch",self.touchHandler)
+end
+
 ---2D Text
 ---@class tgl.TextBox:tgl.BoxObject
 ---@field text string
+---@field tabSize integer
+---@field showScroll boolean auto-show scrollbar when content overflows
+---@field viewY integer current scroll offset in lines
+---@field enabled boolean
 tgl.TextBox=setmetatable({},{__index=tgl.BoxObject})
 tgl.TextBox.__index=tgl.TextBox
 ---@param text string
 ---@param size2 tgl.Size2
 ---@param col2? tgl.Color2
 function tgl.TextBox:new(text,size2,col2)
-  if not text or type("size2")~="table" then return nil end
+  if not text or type(size2)~="table" then return nil end
   local obj=setmetatable({},self)
   obj.type="TextBox"
+  obj.z_index=0
+  obj.tabSize=2
+  obj.showScroll=true
+  obj.viewY=0
+  obj.text=text
+  obj.size2=size2
+  obj.col2=col2 or tgl.defaults.colors2.white
+  obj.enabled=false
+  obj._scrollbar=nil
+  return obj
+end
+function tgl.TextBox:render()
+  if self.hidden then return end
+  local r=tgl.sys.renderer
+  local maxH=self.size2.sizeY
+  local lineCount=0
+  for _ in (self.text.."\n"):gmatch("[^\n]*\n") do lineCount=lineCount+1 end
+  local scrollActive=self.showScroll and lineCount>maxH
+  local maxW=self.size2.sizeX-(scrollActive and 1 or 0)
+  if scrollActive then
+    if not self._scrollbar then
+      self._scrollbar=tgl.Scrollbar:new(
+        tgl.Size2:newFromSize(self.size2.x2,self.size2.y1,1,maxH))
+      self._scrollbar.hitArea=self.size2
+      if self.enabled then self._scrollbar:enable() end
+    end
+    self._scrollbar.z_index=self.z_index
+    self._scrollbar.maxScroll=lineCount-maxH
+    self._scrollbar.visibleSize=maxH
+    self._scrollbar.scroll=self.viewY
+    self._scrollbar.onChange=function(s)
+      self.viewY=s
+      self:render()
+    end
+  else
+    if self._scrollbar then
+      if self.enabled then self._scrollbar:disable() end
+      self._scrollbar=nil
+    end
+    self.viewY=0
+  end
+  local fillSize=scrollActive
+    and tgl.Size2:newFromSize(self.size2.x1,self.size2.y1,maxW,maxH)
+    or self.size2
+  r:fill(fillSize," ",self.col2,self.z_index)
+  local tabRepl=string.rep(" ",self.tabSize)
+  local y=self.size2.y1
+  local lineN=0
+  for line in (self.text.."\n"):gmatch("([^\n]*)\n") do
+    lineN=lineN+1
+    if lineN>self.viewY then
+      if y>self.size2.y2 then break end
+      line=line:gsub("\t",tabRepl)
+      if unicode.wlen(line)>maxW then line=unicode.sub(line,1,maxW) end
+      if #line>0 then r:set(tgl.Pos2:new(self.size2.x1,y),line,self.col2,self.z_index) end
+      y=y+1
+    end
+  end
+  if scrollActive then self._scrollbar:render() end
+end
+function tgl.TextBox:enable()
+  if self.enabled==true or self.hidden==true then return end
+  self.enabled=true
+  if self._scrollbar then self._scrollbar:enable() end
+end
+function tgl.TextBox:disable()
+  self.enabled=false
+  if self._scrollbar then self._scrollbar:disable() end
+end
+
+---2D multiline text input box
+---@class tgl.InputBox:tgl.BoxObject
+---@field text string
+---@field tabSize integer
+---@field showScroll boolean
+---@field viewY integer scroll offset, persists across edit sessions
+---@field cursorCol2 tgl.Color2
+---@field eventName string
+---@field enabled boolean
+---@field handler function
+tgl.InputBox=setmetatable({},{__index=tgl.BoxObject})
+tgl.InputBox.__index=tgl.InputBox
+---@param text string
+---@param size2 tgl.Size2
+---@param col2? tgl.Color2
+---@return tgl.InputBox
+function tgl.InputBox:new(text,size2,col2)
+  if not text or type(size2)~="table" then return nil end
+  local obj=setmetatable({},self)
+  obj.type="InputBox"
   obj.z_index=0
   obj.text=text
   obj.size2=size2
   obj.col2=col2 or tgl.defaults.colors2.white
+  obj.tabSize=2
+  obj.showScroll=true
+  obj.viewY=0
+  obj._scrollbar=nil
+  obj.cursorCol2=tgl.Color2:new(obj.col2[2],obj.col2[1])
+  obj.eventName="InputBoxEvent"
+  obj.enabled=false
+  obj.handler=function(_,_,x,y)
+    local maxX=(obj._scrollbar~=nil) and (obj.size2.x2-1) or obj.size2.x2
+    if x>=obj.size2.x1 and x<=maxX and
+    y>=obj.size2.y1 and y<=obj.size2.y2 and
+    tgl.util.pointInSize2(x,y,tgl.sys.activeArea) then
+      obj:disable()
+      obj:input(x,y)
+      event.push(obj.eventName,obj.text)
+      obj:enable()
+    end
+  end
   return obj
 end
-function tgl.TextBox:render()
-  tgl.sys.renderer:fill(self.size2," ",self.col2,self.z_index)
-  tgl.sys.renderer:set(self.size2.pos1,self.text,self.col2,self.z_index)--!
+function tgl.InputBox:enable()
+  if self.enabled==true or self.hidden==true then return end
+  self.enabled=true
+  event.listen("touch",self.handler)
+  if self._scrollbar then self._scrollbar:enable() end
+end
+function tgl.InputBox:disable()
+  self.enabled=false
+  event.ignore("touch",self.handler)
+  if self._scrollbar then self._scrollbar:disable() end
+end
+function tgl.InputBox:render()
+  if self.hidden then return end
+  local r=tgl.sys.renderer
+  local maxH=self.size2.sizeY
+  local lineCount=0
+  for _ in (self.text.."\n"):gmatch("[^\n]*\n") do lineCount=lineCount+1 end
+  local scrollActive=self.showScroll and lineCount>maxH
+  local maxW=self.size2.sizeX-(scrollActive and 1 or 0)
+  if scrollActive then
+    if not self._scrollbar then
+      self._scrollbar=tgl.Scrollbar:new(
+        tgl.Size2:newFromSize(self.size2.x2,self.size2.y1,1,maxH))
+      self._scrollbar.hitArea=self.size2
+      if self.enabled then self._scrollbar:enable() end
+    end
+    self._scrollbar.z_index=self.z_index
+    self._scrollbar.maxScroll=lineCount-maxH
+    self._scrollbar.visibleSize=maxH
+    self._scrollbar.scroll=self.viewY
+    self._scrollbar.onChange=function(s)
+      self.viewY=s
+      local rr=tgl.sys.renderer
+      rr:stop() self:render() rr:flush()
+    end
+  else
+    if self._scrollbar then
+      if self.enabled then self._scrollbar:disable() end
+      self._scrollbar=nil
+    end
+    self.viewY=0
+  end
+  local fillSize=scrollActive
+    and tgl.Size2:newFromSize(self.size2.x1,self.size2.y1,maxW,maxH)
+    or self.size2
+  r:fill(fillSize," ",self.col2,self.z_index)
+  local tabRepl=string.rep(" ",self.tabSize)
+  local y=self.size2.y1
+  local lineN=0
+  for line in (self.text.."\n"):gmatch("([^\n]*)\n") do
+    lineN=lineN+1
+    if lineN>self.viewY then
+      if y>self.size2.y2 then break end
+      line=line:gsub("\t",tabRepl)
+      if unicode.wlen(line)>maxW then line=unicode.sub(line,1,maxW) end
+      if #line>0 then r:set(tgl.Pos2:new(self.size2.x1,y),line,self.col2,self.z_index) end
+      y=y+1
+    end
+  end
+  if scrollActive then self._scrollbar:render() end
+end
+function tgl.InputBox:input(startX,startY)
+  local r=tgl.sys.renderer
+  local lines={}
+  for line in (self.text.."\n"):gmatch("([^\n]*)\n") do lines[#lines+1]=line end
+  if #lines==0 then lines={""} end
+  local maxH=self.size2.sizeY
+  local tabRepl=string.rep(" ",self.tabSize)
+
+  local function getMaxW()
+    return self.size2.sizeX-(self._scrollbar and 1 or 0)
+  end
+
+  local function visualToCol(line,vx)
+    local x=0
+    for i=1,unicode.wlen(line) do
+      local ch=unicode.sub(line,i,i)
+      local w=(ch=="\t") and self.tabSize or unicode.charWidth(ch)
+      if x+w>vx then return i end
+      x=x+w
+    end
+    return unicode.wlen(line)+1
+  end
+
+  local ln=1
+  local col=1
+  if startX and startY then
+    ln=math.max(1,math.min(#lines,startY-self.size2.y1+self.viewY+1))
+    col=visualToCol(lines[ln],startX-self.size2.x1)
+  end
+
+  local function ensureVisible()
+    if ln-1<self.viewY then self.viewY=ln-1 end
+    if ln-1>=self.viewY+maxH then self.viewY=ln-maxH end
+    if self._scrollbar then self._scrollbar.scroll=self.viewY end
+  end
+
+  local function renderEdit()
+    local maxW=getMaxW()
+    local fillSize=self._scrollbar
+      and tgl.Size2:newFromSize(self.size2.x1,self.size2.y1,maxW,maxH)
+      or self.size2
+    r:fill(fillSize," ",self.col2,self.z_index)
+    for i=1,maxH do
+      local li=i+self.viewY
+      if li>#lines then break end
+      local line=lines[li]:gsub("\t",tabRepl)
+      if unicode.wlen(line)>maxW then line=unicode.sub(line,1,maxW) end
+      if #line>0 then
+        r:set(tgl.Pos2:new(self.size2.x1,self.size2.y1+i-1),line,self.col2,self.z_index)
+      end
+    end
+    local cy=ln-self.viewY
+    if cy>=1 and cy<=maxH then
+      local prefix=unicode.sub(lines[ln],1,col-1):gsub("\t",tabRepl)
+      local cx=unicode.wlen(prefix)
+      if cx<getMaxW() then
+        local rawChar=unicode.sub(lines[ln],col,col)
+        local dispChar=(rawChar=="" or rawChar=="\t") and " " or rawChar
+        r:set(tgl.Pos2:new(self.size2.x1+cx,self.size2.y1+cy-1),dispChar,self.cursorCol2,self.z_index+1)
+      end
+    end
+    if self._scrollbar then
+      self._scrollbar.z_index=self.z_index
+      self._scrollbar:render()
+    end
+    r:flush()
+  end
+
+  local function updateScrollbar()
+    local needScroll=self.showScroll and #lines>maxH
+    if needScroll then
+      if not self._scrollbar then
+        self._scrollbar=tgl.Scrollbar:new(
+          tgl.Size2:newFromSize(self.size2.x2,self.size2.y1,1,maxH))
+        self._scrollbar.hitArea=self.size2
+        self._scrollbar.z_index=self.z_index
+        event.listen("scroll",self._scrollbar.scrollHandler)
+      end
+      self._scrollbar.maxScroll=math.max(0,#lines-maxH)
+      self._scrollbar.visibleSize=maxH
+      self._scrollbar.scroll=self.viewY
+      self._scrollbar.onChange=function(s)
+        self.viewY=s ensureVisible() renderEdit()
+      end
+    else
+      if self._scrollbar then
+        event.ignore("scroll",self._scrollbar.scrollHandler)
+        self._scrollbar=nil
+        self.viewY=0
+      end
+    end
+  end
+
+  --re-register scroll handler (disable() removed it; touch handled inline below)
+  if self._scrollbar then
+    event.listen("scroll",self._scrollbar.scrollHandler)
+    self._scrollbar.onChange=function(s) self.viewY=s ensureVisible() renderEdit() end
+  end
+
+  updateScrollbar()
+  ensureVisible()
+  renderEdit()
+
+  while true do
+    local id,_,a1,a2=event.pullMultiple("interrupted","key_down","touch")
+    if id=="interrupted" then break end
+
+    if id=="touch" then
+      local tx,ty=a1,a2
+      if self._scrollbar and tx==self._scrollbar.size2.x1
+      and ty>=self._scrollbar.size2.y1 and ty<=self._scrollbar.size2.y2 then
+        local startScroll=self._scrollbar.scroll
+        local trackH=self._scrollbar.size2.sizeY
+        while true do
+          local did,_,_,dy=event.pullMultiple("drag","drop")
+          if did=="drop" then break end
+          self._scrollbar:setScroll(startScroll+math.floor((dy-ty)*self._scrollbar.maxScroll/trackH))
+        end
+      elseif tgl.util.pointInSize2(tx,ty,self.size2) then
+        ln=math.max(1,math.min(#lines,ty-self.size2.y1+self.viewY+1))
+        col=visualToCol(lines[ln],tx-self.size2.x1)
+      end
+    else  --key_down
+      local key,key2=a1,a2
+      if key==tgl.defaults.keys.esc then
+        break
+      elseif key2==tgl.defaults.keys2.arrow_left then
+        if col>1 then col=col-1
+        elseif ln>1 then ln=ln-1 col=unicode.wlen(lines[ln])+1 end
+      elseif key2==tgl.defaults.keys2.arrow_right then
+        if col<=unicode.wlen(lines[ln]) then col=col+1
+        elseif ln<#lines then ln=ln+1 col=1 end
+      elseif key2==tgl.defaults.keys2.arrow_up then
+        if ln>1 then ln=ln-1 col=math.min(col,unicode.wlen(lines[ln])+1) end
+      elseif key2==tgl.defaults.keys2.arrow_down then
+        if ln<#lines then ln=ln+1 col=math.min(col,unicode.wlen(lines[ln])+1) end
+      elseif key==tgl.defaults.keys.enter then
+        local before=unicode.sub(lines[ln],1,col-1)
+        local after=unicode.sub(lines[ln],col)
+        lines[ln]=before
+        table.insert(lines,ln+1,after)
+        ln=ln+1 col=1
+      elseif key==tgl.defaults.keys.backspace then
+        if col>1 then
+          lines[ln]=unicode.sub(lines[ln],1,col-2)..unicode.sub(lines[ln],col)
+          col=col-1
+        elseif ln>1 then
+          local prevLen=unicode.wlen(lines[ln-1])
+          lines[ln-1]=lines[ln-1]..lines[ln]
+          table.remove(lines,ln)
+          ln=ln-1 col=prevLen+1
+        end
+      elseif key==tgl.defaults.keys.delete then
+        if col<=unicode.wlen(lines[ln]) then
+          lines[ln]=unicode.sub(lines[ln],1,col-1)..unicode.sub(lines[ln],col+1)
+        elseif ln<#lines then
+          lines[ln]=lines[ln]..lines[ln+1]
+          table.remove(lines,ln+1)
+        end
+      elseif key==tgl.defaults.keys.tab then
+        local sp=string.rep(" ",self.tabSize)
+        lines[ln]=unicode.sub(lines[ln],1,col-1)..sp..unicode.sub(lines[ln],col)
+        col=col+self.tabSize
+      elseif key>=32 then
+        local ch=unicode.char(key)
+        lines[ln]=unicode.sub(lines[ln],1,col-1)..ch..unicode.sub(lines[ln],col)
+        col=col+unicode.charWidth(ch)
+      end
+    end
+    updateScrollbar()
+    ensureVisible()
+    renderEdit()
+  end
+
+  if self._scrollbar then
+    event.ignore("scroll",self._scrollbar.scrollHandler)
+    self._scrollbar.onChange=nil
+  end
+  self.text=table.concat(lines,"\n")
+  r:stop()
+  self:render()  --preserves self.viewY, re-arms onChange for non-edit scrolling
+  r:flush()
 end
 
 ---2D Box frame
@@ -408,22 +853,23 @@ end
 function tgl.Frame:translate()
   for _,object in pairs(self.objects) do
     if object.type then
-      if object.type~="Frame" and object.type~="ScrollFrame" then
-        if not object.relpos2 then object.relpos2=object.pos2 end
-        local t_pos2=object.relpos2
-        if t_pos2 then
-          object.pos2=tgl.Pos2:new(t_pos2.x+self.size2.x1-1,t_pos2.y+self.size2.y1-1) --offset
+      if object.size2 then
+        if not object.relsize2 then
+          object.relsize2=tgl.Size2:newFromPoint(object.size2.x1,object.size2.y1,object.size2.x2,object.size2.y2)
+        end
+        local newPos=tgl.Pos2:new(object.relsize2.x1+self.size2.x1-1,object.relsize2.y1+self.size2.y1-1)
+        if newPos then
+          object:moveToPos2(newPos)
         else
           tgl.util.log("Corrupted object! Type: "..tostring(object.type),"Frame/translate")
         end
-      else ---WIP
-        if not object.relsize2 then object.relsize2=tgl.Size2:newFromPos2(object.size2.pos1,object.size2.pos2) end
-        local t_pos2=object.relsize2.pos1
+      else
+        if not object.relpos2 then object.relpos2=object.pos2 end
+        local t_pos2=object.relpos2
         if t_pos2 then
-          object.size2:moveToPos2(tgl.Pos2:new(t_pos2.x+self.size2.x1-1,t_pos2.y+self.size2.y1-1))
-          object:translate() --test
+          object.pos2=tgl.Pos2:new(t_pos2.x+self.size2.x1-1,t_pos2.y+self.size2.y1-1)
         else
-          tgl.util.log("Corrupted frame!","Frame/translate")
+          tgl.util.log("Corrupted object! Type: "..tostring(object.type),"Frame/translate")
         end
       end
     end
@@ -479,6 +925,12 @@ function tgl.Frame:render()
   --objects
   for _,object in pairs(self.objects) do
     if object.type then
+      -- Store original z_index as relative if not already stored
+      if not object.relativeZ then
+        object.relativeZ=object.z_index
+      end
+      -- Calculate absolute z_index based on frame's z_index
+      object.z_index=self.z_index+object.relativeZ
       object:render()
     end
   end
@@ -489,6 +941,18 @@ function tgl.Frame:moveToPos2(pos2)
   if not pos2 then return false end
   self.size2:moveToPos2(pos2)
   self:translate()
+end
+---Render only a specific region of the frame
+---@param clipRegion tgl.Size2
+function tgl.Frame:renderRegion(clipRegion)
+  if self.hidden then return false end
+  if not clipRegion or clipRegion.type~="Size2" then return false end
+  local r=tgl.sys.renderer
+  local oldClip=r:getClipRegion()
+  r:setClipRegion(clipRegion)
+  self:render()
+  r:setClipRegion(oldClip)
+  return true
 end
 function tgl.Frame:enableAll()
   for _,object in pairs(self.objects) do
@@ -703,25 +1167,20 @@ function tgl.Frame:closeAll()
   end
 end
 
----WIP Scrollable Frame
+---Scrollable Frame
 ---@class tgl.ScrollFrame:tgl.Frame
----@field showScroll boolean NotImplemented: Show scrollbar(default=true)
----@field scroll integer Current scroll
----@field maxScroll integer
----@field isDragging boolean
----@field lastDragY integer
----@field handler function
----@field handleDragEvents function
----@field enable function
----@field disable function
+---@field showScroll boolean show scrollbar when maxScroll>0 (default=true)
+---@field scroll integer current scroll position
+---@field maxScroll integer max scroll value (set by caller)
 ---@field enabled boolean
----@field scrollbarCol2 tgl.Color2 Color2 of side scroller
+---@field _scrollbar tgl.Scrollbar|nil
+---@field scrollcol2 tgl.Color2 col2 for scrollbar (fg=thumb, bg=track)
 tgl.ScrollFrame=setmetatable({},{__index=tgl.Frame})
 tgl.ScrollFrame.__index=tgl.ScrollFrame
 ---@param objects table<string|integer, tgl.BoxObject|tgl.LineObject|tgl.UIObject>
 ---@param size2 tgl.Size2
 ---@param col2? tgl.Color2
----@param scrollcol2? tgl.Color2
+---@param scrollcol2? tgl.Color2 scrollbar col2 (fg=thumb, bg=track)
 ---@return tgl.ScrollFrame
 function tgl.ScrollFrame:new(objects,size2,col2,scrollcol2)
   local obj=setmetatable({},self)
@@ -730,76 +1189,35 @@ function tgl.ScrollFrame:new(objects,size2,col2,scrollcol2)
   obj.objects=objects or {}
   obj.size2=size2 or tgl.Size2:newFromSize(1,1,10,10)
   obj.col2=col2 or tgl.defaults.colors2.white
+  obj.scrollcol2=scrollcol2 or tgl.Color2:new(0xFFFFFF,tgl.defaults.colors16.lightgray)
   obj.showScroll=true
   obj.maxScroll=5
   obj.scroll=0
-  obj.scrollbarCol2=scrollcol2 or tgl.Color2:new(0xFFFFFF,tgl.defaults.colors16.lightgray)
-  obj.isDragging=false
-
-  obj.handler=function (id,_,x,y,scr)
-    if id=="scroll" then
-      if x>=obj.size2.x1 and x<=obj.size2.x2 and
-        y>=obj.size2.y1 and y<=obj.size2.y2 then
-        if obj.scroll-scr>=0 and obj.scroll-scr<=obj.maxScroll then
-          obj.scroll=obj.scroll-scr
-          obj:render()
-        end
-      end
-    else
-      if obj.showScroll and x==obj.size2.x2 and
-      y>=obj.size2.y1 and y<=obj.size2.y2 then
-        obj.isDragging=true
-        obj.lastDragY=y
-        obj:handleDragEvents()
-      end
-    end
-  end
-  obj.handleDragEvents=function()
-    while obj.isDragging do
-      local id,_,x,y=event.pullMultiple("drag","drop")
-      if id=="drag" then
-        -- Update scroll based on drag movement (ignore x, only use y)
-        if obj.lastDragY then
-          local delta_y=y-obj.lastDragY
-          if delta_y~=0 then
-            -- Convert screen drag to scroll amount
-            local visible_height=obj.size2.sizeY
-            local scroll_delta=math.floor(delta_y*obj.maxScroll/visible_height)
-            local new_scroll=obj.scroll+scroll_delta
-            obj.scroll=math.max(0,math.min(obj.maxScroll,new_scroll))
-            obj:render()
-          end
-          obj.lastDragY = y
-        end
-      elseif id=="drop" then
-        obj.isDragging=false
-        obj.lastDragY=nil
-        break
-      end
-    end
-  end
-
+  obj._scrollbar=nil
+  obj.enabled=false
   obj:translate()
   return obj
 end
 function tgl.ScrollFrame:translate()
   for _,object in pairs(self.objects) do
     if object.type then
-      if object.type~="Frame" and object.type~="ScrollFrame" then
-        if not object.relpos2 then object.relpos2=object.pos2 end
-        local t_pos2=object.relpos2
-        if t_pos2 then
-          object.pos2=tgl.Pos2:new(t_pos2.x+self.size2.x1-1,t_pos2.y+self.size2.y1-1) --offset
+      if object.size2 then
+        if not object.relsize2 then
+          object.relsize2=tgl.Size2:newFromPoint(object.size2.x1,object.size2.y1,object.size2.x2,object.size2.y2)
+        end
+        local newPos=tgl.Pos2:new(object.relsize2.x1+self.size2.x1-1,object.relsize2.y1+self.size2.y1-1)
+        if newPos then
+          object:moveToPos2(newPos)
         else
           tgl.util.log("Corrupted object! Type: "..tostring(object.type),"ScrollFrame/translate")
         end
       else
-        if not object.relsize2 then object.relsize2=object.size2 end
-        local t_pos2=object.size2.pos1
+        if not object.relpos2 then object.relpos2=object.pos2 end
+        local t_pos2=object.relpos2
         if t_pos2 then
-          object.size2:moveToPos2(tgl.Pos2:new(t_pos2.x+self.size2.x1-1,t_pos2.y+self.size2.y1-1))
+          object.pos2=tgl.Pos2:new(t_pos2.x+self.size2.x1-1,t_pos2.y+self.size2.y1-1)
         else
-          tgl.util.log("Corrupted frame!","ScrollFrame/translate")
+          tgl.util.log("Corrupted object! Type: "..tostring(object.type),"ScrollFrame/translate")
         end
       end
     end
@@ -809,71 +1227,69 @@ end
 function tgl.ScrollFrame:render()
   if self.hidden then return false end
   local r=tgl.sys.renderer
-  --frame
-  r:fill(self.size2," ",self.col2)
-  --scrollbar
-  if self.showScroll and self.maxScroll > 0 then
-    local scrollbar_x = self.size2.x2
-    -- Calculate scrollbar metrics
-    local visible_height = self.size2.sizeY
-    local total_height = visible_height + self.maxScroll
-    local scrollbar_height = math.max(1, math.floor(visible_height * visible_height / total_height))
-    local scrollbar_pos = math.floor(self.scroll * (visible_height - scrollbar_height) / self.maxScroll)
-    r:fill(tgl.Size2:new(scrollbar_x,self.size2.y1,1,visible_height)," ",self.scrollbarCol2)
-    -- Draw scrollbar thumb
-    if scrollbar_height > 0 then
-      local thumb_y=self.size2.y1+scrollbar_pos
-      r:fill(tgl.Size2:new(scrollbar_x,thumb_y,1,scrollbar_height),"█",self.scrollbarCol2)
+  local scrollActive=self.showScroll and self.maxScroll>0
+  if scrollActive then
+    if not self._scrollbar then
+      self._scrollbar=tgl.Scrollbar:new(
+        tgl.Size2:newFromSize(self.size2.x2,self.size2.y1,1,self.size2.sizeY),
+        self.scrollcol2)
+      self._scrollbar.hitArea=self.size2
+      if self.enabled then self._scrollbar:enable() end
     end
+    self._scrollbar.z_index=self.z_index
+    self._scrollbar.maxScroll=self.maxScroll
+    self._scrollbar.visibleSize=self.size2.sizeY
+    self._scrollbar.scroll=self.scroll
+    self._scrollbar.onChange=function(s)
+      self.scroll=s
+      self:render()
+    end
+  else
+    if self._scrollbar then
+      if self.enabled then self._scrollbar:disable() end
+      self._scrollbar=nil
+    end
+    self.scroll=0
   end
-  --objects
+  local contentX2=scrollActive and self.size2.x2-1 or self.size2.x2
+  local contentSize2=scrollActive
+    and tgl.Size2:newFromPoint(self.size2.x1,self.size2.y1,contentX2,self.size2.y2)
+    or self.size2
+  r:fill(contentSize2," ",self.col2,self.z_index)
+  local prevClip=r:getClipRegion()
+  r:setClipRegion(contentSize2)
   for _,object in pairs(self.objects) do
     if object.type then
-      --check if should render
       if object.relpos2 then
         if object.relpos2.y>self.scroll and object.relpos2.y<=self.size2.sizeY+self.scroll then
-          --translate
           object.pos2=tgl.Pos2:new(object.relpos2.x+self.size2.x1-1,object.relpos2.y+self.size2.y1-self.scroll-1)
           object:render()
         end
       elseif object.relsize2 then
-        --
+        local absX=object.relsize2.x1+self.size2.x1-1
+        local absY=object.relsize2.y1+self.size2.y1-self.scroll-1
+        if absY+object.relsize2.sizeY-1>=self.size2.y1 and absY<=self.size2.y2 then
+          object:moveToPos2(tgl.Pos2:new(absX,absY))
+          object:render()
+        end
       else
-        tgl.util.log("Corrupted object(no pos2/size2): "..object.type,"ScrollFrame/render")
+        tgl.util.log("Corrupted object(no relpos2/relsize2): "..object.type,"ScrollFrame/render")
         tgl.util.objectInfo(object)
       end
     end
   end
-end
-
-function tgl.ScrollFrame:WIPrender()
-  if self.hidden then return end
-  local r=tgl.sys.renderer
-  if not self.buf then
-    local success,buf=r:allocateBuffer(self.size2.sizeX,self.size2.sizeY+self.maxScroll)
-    if not success then
-      --default
-      self:renderOld()
-      return
-    end
-    self.buf=buf
-  end
-  r:setBuffer(self.buf)
-  self:renderOld()
-  r:setBuffer(0)
-  r:bufcopy(self.buf,0,self.size2,self.z_index)
+  r:setClipRegion(prevClip)
+  if scrollActive then self._scrollbar:render() end
 end
 
 function tgl.ScrollFrame:enable()
   if self.enabled==true or self.hidden==true then return end
   self.enabled=true
-  event.listen("scroll",self.handler)
-  event.listen("touch",self.handler)
+  if self._scrollbar then self._scrollbar:enable() end
 end
 function tgl.ScrollFrame:disable()
   self.enabled=false
-  event.ignore("scroll",self.handler)
-  event.ignore("touch",self.handler)
+  if self._scrollbar then self._scrollbar:disable() end
 end
 function tgl.ScrollFrame:enableAll()
   for _,object in pairs(self.objects) do

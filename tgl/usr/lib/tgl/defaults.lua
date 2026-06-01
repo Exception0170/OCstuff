@@ -15,7 +15,7 @@ tgl.defaults={
   ---For box art
   boxes={
     double="═║╔╗╚╝╠╣╦╩╬",
-    signle="─│┌┐└┘├┤┬┴┼",
+    single="─│┌┐└┘├┤┬┴┼",
     round= "─│╭╮╰╯├┤┬┴┼"
   },
   ---Key values for input reading

@@ -16,6 +16,7 @@ tgl.sys.resetKeybind=18 --Ctrl+R for reset
 ---@field frameCounter integer
 ---@field frameFreq number
 ---@field resetKeybindEnabled boolean
+---@field clipRegion tgl.Size2|nil
 tgl.Renderer={}
 tgl.Renderer.cmd={}
 tgl.Renderer.__index=tgl.Renderer
@@ -37,6 +38,7 @@ function tgl.Renderer:init(frequency)
   obj.rendering=false
   obj.activeBuffer=obj.gpu.getActiveBuffer()
   obj.resetKeybindEnabled=true
+  obj.clipRegion=nil
   tgl.sys.renderer=obj
 end
 ---internal functions
@@ -58,13 +60,26 @@ function tgl.Renderer:start()
   end,math.huge)
   event.listen("key_down",self.resetKeybind)
 end
-function tgl.Renderer:stop() self.stopped=true end --??
+function tgl.Renderer:stop() self.stopped=true end
 function tgl.Renderer:resume() self.stopped=false end
+---Resume and immediately execute any queued commands.
+function tgl.Renderer:flush()
+  self.stopped=false
+  if self.dirty and not self.rendering then
+    self:render()
+  end
+end
 function tgl.Renderer:finish()
   if not self.timer then return false end
-  self:freeAllBuffers()
   event.ignore("key_down",self.resetKeybind)
-  return event.cancel(self.timer)
+  local ok=event.cancel(self.timer)
+  self.timer=nil
+  self.stopped=false
+  self.queue={}
+  self.nextQueue={}
+  self.dirty=false
+  self.gpu.freeAllBuffers()
+  return ok
 end
 function tgl.Renderer:addCmd(cmd)
   if type(cmd)~="table" then
@@ -74,6 +89,7 @@ function tgl.Renderer:addCmd(cmd)
   if not cmd.z_index then cmd.z_index=0 end
   if not cmd.buffer then cmd.buffer=0 end
   if cmd.cmd=="bufcopy" then cmd.buffer=nil end
+  cmd.clipRegion=self.clipRegion
   self.frameCounter=self.frameCounter+1
   cmd.order=self.frameCounter
   if not self.rendering then
@@ -101,16 +117,32 @@ function tgl.Renderer:execCmd(cmd)
   end
   if cmd.col2 then tgl.changeToColor2(cmd.col2,true) end
   if cmd.cmd=="set" then
+    if cmd.clipRegion then
+      if not tgl.util.pos2InSize2(cmd.pos2,cmd.clipRegion) then
+        return true
+      end
+    end
     if not cmd.vertical then
       return self.gpu.set(cmd.pos2.x,cmd.pos2.y,cmd.value)
     end
     --vertical
     local len=unicode.wlen(cmd.value)
     for i=1,len do
-      self.gpu.set(cmd.pos2.x,cmd.pos2.y+i-1,unicode.sub(cmd.value,i,i))
+      local y=cmd.pos2.y+i-1
+      if not cmd.clipRegion or tgl.util.pointInSize2(cmd.pos2.x,y,cmd.clipRegion) then
+        self.gpu.set(cmd.pos2.x,y,unicode.sub(cmd.value,i,i))
+      end
     end
     return true
   elseif cmd.cmd=="fill" then
+    if cmd.clipRegion then
+      local ix1=math.max(cmd.size2.x1,cmd.clipRegion.x1)
+      local iy1=math.max(cmd.size2.y1,cmd.clipRegion.y1)
+      local ix2=math.min(cmd.size2.x2,cmd.clipRegion.x2)
+      local iy2=math.min(cmd.size2.y2,cmd.clipRegion.y2)
+      if ix1>ix2 or iy1>iy2 then return true end
+      return self.gpu.fill(ix1,iy1,ix2-ix1+1,iy2-iy1+1,cmd.char)
+    end
     return self.gpu.fill(cmd.size2.x1,cmd.size2.y1,cmd.size2.sizeX,cmd.size2.sizeY,cmd.char)
   elseif cmd.cmd=="copy" then
     return self.gpu.copy(cmd.src.x1,cmd.src.y1,cmd.src.sizeX,cmd.src.sizeY,cmd.dst.x,cmd.dst.y)
@@ -306,7 +338,7 @@ end
 ---@param sizeY integer
 ---@return boolean,integer|nil
 function tgl.Renderer:allocateBuffer(sizeX,sizeY)
-  if type(sizeX)~="number" and type(sizeY)~="number" then
+  if type(sizeX)~="number" or type(sizeY)~="number" then
     tgl.util.log("Unvalid buffer allocation: "..tostring(sizeX).." x "..tostring(sizeY),"Renderer")
     return false
   end
@@ -348,6 +380,18 @@ end
 
 function tgl.Renderer:resetCursor(col2)
   self:addCmd({cmd="reset",col2=col2 or tgl.defaults.colors2.black})
+end
+
+---Set clipping region for rendering
+---@param size2? tgl.Size2 nil to disable clipping
+function tgl.Renderer:setClipRegion(size2)
+  self.clipRegion=size2
+end
+
+---Get current clipping region
+---@return tgl.Size2|nil
+function tgl.Renderer:getClipRegion()
+  return self.clipRegion
 end
 
 return tgl end

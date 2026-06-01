@@ -4,7 +4,7 @@ tgl.debug=true
 tgl.logfile="" --file to log
 tgl.sys={}
 ---Classes with `:enable()` and `:disable()` methods
-tgl.sys.enableTypes={Button=true,EventButton=true,InputField=true,ScrollFrame=true}
+tgl.sys.enableTypes={Button=true,EventButton=true,InputField=true,InputBox=true,TextBox=true,ScrollFrame=true}
 ---Classes with `:enableAll()` and `:disableAll()` methods 
 tgl.sys.enableAllTypes={Frame=true,Bar=true,ScrollFrame=true}
 ---Classes with `:open()` and `:close()` methods
@@ -16,6 +16,19 @@ tgl.defaults={}
 ---Active area at screen which defines where elements are interactable
 ---@type tgl.Size2|nil
 tgl.sys.activeArea=nil
+---Dirty regions that need redrawing
+tgl.sys.dirtyRegions={}
+---Marks a region as needing redraw
+---@param size2 tgl.Size2
+function tgl.sys.markDirty(size2)
+  if size2 and size2.type=="Size2" then
+    table.insert(tgl.sys.dirtyRegions,size2)
+  end
+end
+---Clears all dirty regions
+function tgl.sys.clearDirty()
+  tgl.sys.dirtyRegions={}
+end
 ---Sets new active area
 ---@param size2 tgl.Size2
 function tgl.sys.setActiveArea(size2)
@@ -59,9 +72,18 @@ end
 function tgl.util.size2InSize2(size1,size2)
   if type(size1)~="table" or type(size2)~="table" then return false end
   if size1.type~="Size2" or size2.type~="Size2" then return false end
-  if size2.x1>=size1.x1 and size2.x2<=size2.x2
-  and size2.y1>=size2.y1 and size2.y2<=size2.y2 then return true
+  if size2.x1>=size1.x1 and size2.x2<=size1.x2
+  and size2.y1>=size1.y1 and size2.y2<=size1.y2 then return true
   else return false end
+end
+---Checks if two Size2 regions intersect
+---@param size1 tgl.Size2
+---@param size2 tgl.Size2
+---@return boolean
+function tgl.util.size2Intersects(size1,size2)
+  if type(size1)~="table" or type(size2)~="table" then return false end
+  if size1.type~="Size2" or size2.type~="Size2" then return false end
+  return not (size1.x2<size2.x1 or size1.x1>size2.x2 or size1.y2<size2.y1 or size1.y1>size2.y2)
 end
 
 ---@param text string
@@ -176,7 +198,7 @@ function tgl.Pos2:new(x,y)
   x=tonumber(x)
   y=tonumber(y)
   if x and y then
-    if x>0 and y>0 and x<=tgl.defaults.screenSizeX then
+    if x>0 and x<=tgl.defaults.screenSizeX then
       local obj=setmetatable({},self)
       obj.type="Pos2"
       obj[1]=x

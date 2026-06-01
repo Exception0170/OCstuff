@@ -1,7 +1,8 @@
 update zirnox
 tgl-img: render part of image
+Radiobuttons
 
-0.8
-InputField2
-RadioButtons
-selectmenu
+for tgl 1.0
+make custom tgl.event? to track listeners and on exit, shut them down too?
+make tgl-img part of base tgl, make tgl.ScreenSave use image.
+configurable default theme
