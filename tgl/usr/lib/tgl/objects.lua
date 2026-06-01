@@ -484,9 +484,10 @@ function tgl.TextBox:render()
     if not self._scrollbar then
       self._scrollbar=tgl.Scrollbar:new(
         tgl.Size2:newFromSize(self.size2.x2,self.size2.y1,1,maxH))
-      self._scrollbar.hitArea=self.size2
       if self.enabled then self._scrollbar:enable() end
     end
+    self._scrollbar.size2:moveToPos2(tgl.Pos2:new(self.size2.x2,self.size2.y1))
+    self._scrollbar.hitArea=self.size2
     self._scrollbar.z_index=self.z_index
     self._scrollbar.maxScroll=lineCount-maxH
     self._scrollbar.visibleSize=maxH
@@ -539,8 +540,11 @@ end
 ---@field viewY integer scroll offset, persists across edit sessions
 ---@field cursorCol2 tgl.Color2
 ---@field eventName string
+---@field stopEventName string
 ---@field enabled boolean
 ---@field handler function
+---@field stopOnClickOutside boolean stop editing when clicking outside the box (default=true)
+---@field clearOnClick boolean clear text when clicking to start editing (default=false)
 tgl.InputBox=setmetatable({},{__index=tgl.BoxObject})
 tgl.InputBox.__index=tgl.InputBox
 ---@param text string
@@ -561,6 +565,9 @@ function tgl.InputBox:new(text,size2,col2)
   obj._scrollbar=nil
   obj.cursorCol2=tgl.Color2:new(obj.col2[2],obj.col2[1])
   obj.eventName="InputBoxEvent"
+  obj.stopEventName="InputBoxStop"
+  obj.stopOnClickOutside=true
+  obj.clearOnClick=false
   obj.enabled=false
   obj.handler=function(_,_,x,y)
     local maxX=(obj._scrollbar~=nil) and (obj.size2.x2-1) or obj.size2.x2
@@ -570,7 +577,8 @@ function tgl.InputBox:new(text,size2,col2)
       obj:disable()
       obj:input(x,y)
       event.push(obj.eventName,obj.text)
-      obj:enable()
+      if not obj._keepDisabled then obj:enable() end
+      obj._keepDisabled=nil
     end
   end
   return obj
@@ -583,6 +591,10 @@ function tgl.InputBox:enable()
 end
 function tgl.InputBox:disable()
   self.enabled=false
+  if self._inputActive then
+    event.push(self.stopEventName)
+    self._keepDisabled=true
+  end
   event.ignore("touch",self.handler)
   if self._scrollbar then self._scrollbar:disable() end
 end
@@ -598,9 +610,10 @@ function tgl.InputBox:render()
     if not self._scrollbar then
       self._scrollbar=tgl.Scrollbar:new(
         tgl.Size2:newFromSize(self.size2.x2,self.size2.y1,1,maxH))
-      self._scrollbar.hitArea=self.size2
       if self.enabled then self._scrollbar:enable() end
     end
+    self._scrollbar.size2:moveToPos2(tgl.Pos2:new(self.size2.x2,self.size2.y1))
+    self._scrollbar.hitArea=self.size2
     self._scrollbar.z_index=self.z_index
     self._scrollbar.maxScroll=lineCount-maxH
     self._scrollbar.visibleSize=maxH
@@ -664,6 +677,11 @@ function tgl.InputBox:input(startX,startY)
   if startX and startY then
     ln=math.max(1,math.min(#lines,startY-self.size2.y1+self.viewY+1))
     col=visualToCol(lines[ln],startX-self.size2.x1)
+  end
+  if self.clearOnClick then
+    lines={""}
+    ln=1 col=1
+    self.viewY=0
   end
 
   local function ensureVisible()
@@ -739,9 +757,10 @@ function tgl.InputBox:input(startX,startY)
   ensureVisible()
   renderEdit()
 
+  self._inputActive=true
   while true do
-    local id,_,a1,a2=event.pullMultiple("interrupted","key_down","touch")
-    if id=="interrupted" then break end
+    local id,_,a1,a2=event.pullMultiple("interrupted","key_down","touch",self.stopEventName)
+    if id=="interrupted" or id==self.stopEventName then break end
 
     if id=="touch" then
       local tx,ty=a1,a2
@@ -757,6 +776,8 @@ function tgl.InputBox:input(startX,startY)
       elseif tgl.util.pointInSize2(tx,ty,self.size2) then
         ln=math.max(1,math.min(#lines,ty-self.size2.y1+self.viewY+1))
         col=visualToCol(lines[ln],tx-self.size2.x1)
+      elseif self.stopOnClickOutside then
+        break
       end
     else  --key_down
       local key,key2=a1,a2
@@ -814,6 +835,7 @@ function tgl.InputBox:input(startX,startY)
     event.ignore("scroll",self._scrollbar.scrollHandler)
     self._scrollbar.onChange=nil
   end
+  self._inputActive=nil
   self.text=table.concat(lines,"\n")
   r:stop()
   self:render()  --preserves self.viewY, re-arms onChange for non-edit scrolling
@@ -1233,9 +1255,10 @@ function tgl.ScrollFrame:render()
       self._scrollbar=tgl.Scrollbar:new(
         tgl.Size2:newFromSize(self.size2.x2,self.size2.y1,1,self.size2.sizeY),
         self.scrollcol2)
-      self._scrollbar.hitArea=self.size2
       if self.enabled then self._scrollbar:enable() end
     end
+    self._scrollbar.size2:moveToPos2(tgl.Pos2:new(self.size2.x2,self.size2.y1))
+    self._scrollbar.hitArea=self.size2
     self._scrollbar.z_index=self.z_index
     self._scrollbar.maxScroll=self.maxScroll
     self._scrollbar.visibleSize=self.size2.sizeY
