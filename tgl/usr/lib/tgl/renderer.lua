@@ -17,6 +17,8 @@ tgl.sys.resetKeybind=18 --Ctrl+R for reset
 ---@field frameFreq number
 ---@field resetKeybindEnabled boolean
 ---@field clipRegion tgl.Size2|nil
+---@field _zbuf table z-index of last write per screen cell, indexed (y-1)*_sw+x
+---@field _sw integer screen width captured at init
 tgl.Renderer={}
 tgl.Renderer.cmd={}
 tgl.Renderer.__index=tgl.Renderer
@@ -39,6 +41,8 @@ function tgl.Renderer:init(frequency)
   obj.activeBuffer=obj.gpu.getActiveBuffer()
   obj.resetKeybindEnabled=true
   obj.clipRegion=nil
+  obj._sw=tgl.defaults.screenSizeX
+  obj._zbuf={}
   tgl.sys.renderer=obj
 end
 ---internal functions
@@ -123,6 +127,11 @@ function tgl.Renderer:execCmd(cmd)
       end
     end
     if not cmd.vertical then
+      if cmd.buffer==0 then
+        local z=cmd.z_index or 0
+        local len=unicode.wlen(cmd.value)
+        for i=0,len-1 do self._zbuf[(cmd.pos2.y-1)*self._sw+cmd.pos2.x+i]=z end
+      end
       return self.gpu.set(cmd.pos2.x,cmd.pos2.y,cmd.value)
     end
     --vertical
@@ -131,19 +140,30 @@ function tgl.Renderer:execCmd(cmd)
       local y=cmd.pos2.y+i-1
       if not cmd.clipRegion or tgl.util.pointInSize2(cmd.pos2.x,y,cmd.clipRegion) then
         self.gpu.set(cmd.pos2.x,y,unicode.sub(cmd.value,i,i))
+        if cmd.buffer==0 then self._zbuf[(y-1)*self._sw+cmd.pos2.x]=cmd.z_index or 0 end
       end
     end
     return true
   elseif cmd.cmd=="fill" then
+    local ok,ix1,iy1,ix2,iy2
     if cmd.clipRegion then
-      local ix1=math.max(cmd.size2.x1,cmd.clipRegion.x1)
-      local iy1=math.max(cmd.size2.y1,cmd.clipRegion.y1)
-      local ix2=math.min(cmd.size2.x2,cmd.clipRegion.x2)
-      local iy2=math.min(cmd.size2.y2,cmd.clipRegion.y2)
+      ix1=math.max(cmd.size2.x1,cmd.clipRegion.x1)
+      iy1=math.max(cmd.size2.y1,cmd.clipRegion.y1)
+      ix2=math.min(cmd.size2.x2,cmd.clipRegion.x2)
+      iy2=math.min(cmd.size2.y2,cmd.clipRegion.y2)
       if ix1>ix2 or iy1>iy2 then return true end
-      return self.gpu.fill(ix1,iy1,ix2-ix1+1,iy2-iy1+1,cmd.char)
+      ok=self.gpu.fill(ix1,iy1,ix2-ix1+1,iy2-iy1+1,cmd.char)
+    else
+      ix1=cmd.size2.x1 iy1=cmd.size2.y1 ix2=cmd.size2.x2 iy2=cmd.size2.y2
+      ok=self.gpu.fill(ix1,iy1,cmd.size2.sizeX,cmd.size2.sizeY,cmd.char)
     end
-    return self.gpu.fill(cmd.size2.x1,cmd.size2.y1,cmd.size2.sizeX,cmd.size2.sizeY,cmd.char)
+    if cmd.buffer==0 then
+      local z=cmd.z_index or 0
+      for y=iy1,iy2 do
+        for x=ix1,ix2 do self._zbuf[(y-1)*self._sw+x]=z end
+      end
+    end
+    return ok
   elseif cmd.cmd=="copy" then
     return self.gpu.copy(cmd.src.x1,cmd.src.y1,cmd.src.sizeX,cmd.src.sizeY,cmd.dst.x,cmd.dst.y)
   elseif cmd.cmd=="bufcopy" then
@@ -311,6 +331,14 @@ function tgl.Renderer:get(pos2,buf)
     self.gpu.setActiveBuffer(self.activeBuffer)
   end
   return char,tgl.Color2:new(fg_col,bg_col)
+end
+
+---Returns the z-index of the last command rendered at screen cell (x,y).
+---@param x integer
+---@param y integer
+---@return integer
+function tgl.Renderer:getZ(x,y)
+  return self._zbuf[(y-1)*self._sw+x] or 0
 end
 
 function tgl.Renderer:getPoint(x,y,buf)

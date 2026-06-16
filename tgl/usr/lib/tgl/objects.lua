@@ -45,7 +45,8 @@ end
 ---Single line text object
 ---@class tgl.Text:tgl.LineObject
 ---@field text string
----@field maxLength integer Max text length, -1 for unlimeted
+---@field maxLength integer Max text length, -1 for unlimited
+---@field vertical boolean Render text vertically
 tgl.Text=setmetatable({},{__index=tgl.LineObject})
 tgl.Text.__index=tgl.Text
 ---@param text string
@@ -60,6 +61,7 @@ function tgl.Text:new(text,col2,pos2)
   obj.col2=col2 or tgl.Color2:new()
   obj.pos2=pos2 or nil --Intended: pos2 can be nil, text will displayed on current cursor pos
   obj.maxLength=-1
+  obj.vertical=false
   return obj
 end
 
@@ -79,13 +81,13 @@ function tgl.Text:render(nextLine)
   if not self.pos2 then
     local text=self.text
     if nextLine then text=text.."\n" end
-    r:set(tgl.getCurrentPos2(),text,self.col2,self.z_index)
+    r:set(tgl.getCurrentPos2(),text,self.col2,self.z_index,self.vertical)
     return
   end
   if self.maxLength>4 then
-    r:set(self.pos2,string.rep(" ",self.maxLength),self.col2,self.z_index)
+    r:set(self.pos2,string.rep(" ",self.maxLength),self.col2,self.z_index,self.vertical)
   end
-  r:set(self.pos2,self.text,self.col2,self.z_index)
+  r:set(self.pos2,self.text,self.col2,self.z_index,self.vertical)
   return
 end
 ---Clear text field and render new text
@@ -168,9 +170,7 @@ function tgl.Button:new(text,callback,pos2,color2)
     and tgl.util.pointInSize2(x,y,tgl.sys.activeArea) then
       if obj.text=="" then return end
       if obj.checkRendered then
-        if tgl.util.getLineMatched(obj.pos2,obj.text,obj.col2)/unicode.wlen(obj.text)<0.6 then
-          return
-        end
+        if tgl.sys.renderer:getZ(obj.pos2.x,obj.pos2.y)>obj.z_index then return end
       end
       if type(obj.onClick)=="function" then
         thread.create(obj.onClick):detach()
@@ -231,9 +231,7 @@ function tgl.EventButton(text,eventName,callValue,pos2,col2)
     and y==obj.pos2.y
     and tgl.util.pointInSize2(x,y,tgl.sys.activeArea) then
       if obj.checkRendered then
-        if tgl.util.getLineMatched(obj.pos2,obj.text,obj.col2)/unicode.wlen(obj.text)<0.6 then
-          return
-        end
+        if tgl.sys.renderer:getZ(obj.pos2.x,obj.pos2.y)>obj.z_index then return end
       end
       if type(obj.onClick)=="function" then
         thread.create(obj.onClick):detach()
@@ -253,6 +251,7 @@ end
 ---@field erase boolean If erase field after input is done
 ---@field secret boolean If use password protection
 ---@field handler function Function is called on user click
+---@field stopOnClickOutside boolean stop input when clicking outside the field (default=false)
 tgl.InputField=setmetatable({},{__index=tgl.LineObjectInteractable})
 tgl.InputField.__index=tgl.InputField
 function tgl.InputField:new(text,pos2,col2)
@@ -269,23 +268,14 @@ function tgl.InputField:new(text,pos2,col2)
   obj.checkRendered=true
   obj.charCol2=tgl.Color2:new(0,tgl.defaults.colors16["lime"])
   obj.erase=true
+  obj.stopOnClickOutside=false
   obj.handler=function (_,_,x,y)
     local textLen=unicode.wlen(obj.text)
     if textLen==0 then textLen=unicode.wlen(obj.defaultText) end
     if x>=obj.pos2.x and x<obj.pos2.x+textLen and y==obj.pos2.y
     and tgl.util.pointInSize2(x,y,tgl.sys.activeArea) then
       if obj.checkRendered then
-        if unicode.wlen(obj.text)>0 then
-          if tgl.util.getLineMatched(obj.pos2,obj.text)/textLen<1.0 then
-            tgl.util.log(tgl.util.getLineMatched(obj.pos2,obj.text).." "..obj.text.." "..tgl.util.getLine(obj.pos2,textLen),"DIF/handler")
-            return
-          end
-        else
-          if tgl.util.getLineMatched(obj.pos2,obj.defaultText)/textLen<1.0 then
-            tgl.util.log(tgl.util.getLineMatched(obj.pos2,obj.defaultText).." "..obj.text.." "..tgl.util.getLine(obj.pos2,textLen),"DIF/handler")
-            return
-          end
-        end
+        if tgl.sys.renderer:getZ(obj.pos2.x,obj.pos2.y)>obj.z_index then return end
       end
       obj:disable()
       obj:input()
@@ -299,6 +289,7 @@ end
 function tgl.InputField:input()
   local r=tgl.sys.renderer
   local printChar=tgl.Text:new(" ",self.charCol2)
+  local _prevAA=tgl.sys.getActiveArea()
   tgl.sys.setActiveArea(tgl.Size2:newFromPos2(self.pos2,tgl.Pos2:new(self.pos2.x+unicode.wlen(self.text),self.pos2.y)))
   local offsetX=0
   if self.erase then
@@ -312,35 +303,45 @@ function tgl.InputField:input()
   ---@private
   local function printChr()
     printChar.pos2=tgl.Pos2:new(self.pos2.x+offsetX,self.pos2.y)
+    printChar.z_index=self.z_index
     printChar:render()
   end
   printChr()
+  local _pull={"interrupted","key_down"}
+  if self.stopOnClickOutside then table.insert(_pull,"touch") end
   while true do
-    local id,_,key,key2=event.pullMultiple("interrupted","key_down")
-    if offsetX<0 then offsetX=0 tgl.util.log("Input going offbounds","InputField/input") end
-    if key==tgl.defaults.keys.enter or key==tgl.defaults.keys.esc or id=="interrupted" then
-      break
-    elseif (key==tgl.defaults.keys.backspace or key==tgl.defaults.keys.delete) and unicode.wlen(self.text)>0 then
-      local textLen=unicode.wlen(self.text)
-      r:fill(tgl.Size2:new(self.pos2.x,self.pos2.y,textLen+1,1)," ",self.col2,self.z_index)
-      offsetX=offsetX-unicode.charWidth(unicode.sub(self.text,textLen))
-      self.text=unicode.sub(self.text,1,textLen-1)
-      if textLen-1>0 then self:render()
-      else r:fill(tgl.Size2:new(self.pos2.x,self.pos2.y,unicode.wlen(self.text)+1,1)," ",self.col2,self.z_index) end
-      printChr()
-    elseif key>=32 and key~=tgl.defaults.keys.delete then
-      if unicode.wlen(self.text)+unicode.charWidth(key)<=unicode.wlen(self.defaultText) then
-        self.text=self.text..unicode.char(key)
-        self:render()
-        offsetX=offsetX+unicode.charWidth(unicode.char(key))
+    local id,_,a,b=event.pullMultiple(table.unpack(_pull))
+    if id=="touch" then
+      if not (a>=self.pos2.x and a<self.pos2.x+unicode.wlen(self.defaultText) and b==self.pos2.y) then
+        break
+      end
+    else
+      local key=a
+      if offsetX<0 then offsetX=0 tgl.util.log("Input going offbounds","InputField/input") end
+      if key==tgl.defaults.keys.enter or key==tgl.defaults.keys.esc or id=="interrupted" then
+        break
+      elseif (key==tgl.defaults.keys.backspace or key==tgl.defaults.keys.delete) and unicode.wlen(self.text)>0 then
+        local textLen=unicode.wlen(self.text)
+        r:fill(tgl.Size2:new(self.pos2.x,self.pos2.y,textLen+1,1)," ",self.col2,self.z_index)
+        offsetX=offsetX-unicode.charWidth(unicode.sub(self.text,textLen))
+        self.text=unicode.sub(self.text,1,textLen-1)
+        if textLen-1>0 then self:render()
+        else r:fill(tgl.Size2:new(self.pos2.x,self.pos2.y,unicode.wlen(self.text)+1,1)," ",self.col2,self.z_index) end
         printChr()
+      elseif key>=32 and key~=tgl.defaults.keys.delete then
+        if unicode.wlen(self.text)+unicode.charWidth(key)<=unicode.wlen(self.defaultText) then
+          self.text=self.text..unicode.char(key)
+          self:render()
+          offsetX=offsetX+unicode.charWidth(unicode.char(key))
+          printChr()
+        end
       end
     end
   end
   printChar.col2=self.col2
   printChr()
   self:render()
-  tgl.sys.resetActiveArea()
+  if _prevAA then tgl.sys.setActiveArea(_prevAA) else tgl.sys.resetActiveArea() end
 end
 function tgl.InputField:render()
   if self.hidden then return false end
@@ -543,8 +544,12 @@ end
 ---@field stopEventName string
 ---@field enabled boolean
 ---@field handler function
+---@field checkRendered boolean check if the box is actually visible before activating (default=true)
 ---@field stopOnClickOutside boolean stop editing when clicking outside the box (default=true)
 ---@field clearOnClick boolean clear text when clicking to start editing (default=false)
+---@field wrap boolean soft-wrap long lines (default false)
+---@field lineNumbers boolean show line numbers in gutter (default false)
+---@field lineNumCol2 tgl.Color2|nil gutter color; defaults to darkgray on text background
 tgl.InputBox=setmetatable({},{__index=tgl.BoxObject})
 tgl.InputBox.__index=tgl.InputBox
 ---@param text string
@@ -566,14 +571,22 @@ function tgl.InputBox:new(text,size2,col2)
   obj.cursorCol2=tgl.Color2:new(obj.col2[2],obj.col2[1])
   obj.eventName="InputBoxEvent"
   obj.stopEventName="InputBoxStop"
+  obj.checkRendered=true
   obj.stopOnClickOutside=true
   obj.clearOnClick=false
+  obj.wrap=false
+  obj.lineNumbers=false
+  obj.lineNumCol2=nil
   obj.enabled=false
   obj.handler=function(_,_,x,y)
+    if tgl.sys.wm and tgl.sys.wm.locked then return end
     local maxX=(obj._scrollbar~=nil) and (obj.size2.x2-1) or obj.size2.x2
     if x>=obj.size2.x1 and x<=maxX and
     y>=obj.size2.y1 and y<=obj.size2.y2 and
     tgl.util.pointInSize2(x,y,tgl.sys.activeArea) then
+      if obj.checkRendered then
+        if tgl.sys.renderer:getZ(x,y)>obj.z_index then return end
+      end
       obj:disable()
       obj:input(x,y)
       event.push(obj.eventName,obj.text)
@@ -602,6 +615,84 @@ function tgl.InputBox:render()
   if self.hidden then return end
   local r=tgl.sys.renderer
   local maxH=self.size2.sizeY
+  local tabRepl=string.rep(" ",self.tabSize)
+
+  if self.wrap then
+    local lines={}
+    for l in (self.text.."\n"):gmatch("([^\n]*)\n") do lines[#lines+1]=l end
+    local lnw=self.lineNumbers and (#tostring(#lines)+1) or 0
+    local lnCol2=lnw>0 and (self.lineNumCol2 or tgl.Color2:new(tgl.defaults.colors16.darkgray,self.col2[2])) or nil
+    local function buildVL(mw)
+      local vl={}
+      for li,line in ipairs(lines) do
+        local exp=line:gsub("\t",tabRepl)
+        local len=unicode.wlen(exp)
+        if len==0 then
+          vl[#vl+1]={li=li,text="",startVC=0}
+        else
+          local pos=1
+          while pos<=len do
+            vl[#vl+1]={li=li,text=unicode.sub(exp,pos,math.min(pos+mw-1,len)),startVC=pos-1}
+            pos=pos+mw
+          end
+        end
+      end
+      return vl
+    end
+    local mw=self.size2.sizeX-lnw
+    local vlines=buildVL(mw)
+    local scrollActive=self.showScroll and #vlines>maxH
+    if scrollActive then
+      mw=self.size2.sizeX-lnw-1
+      vlines=buildVL(mw)
+    end
+    if scrollActive then
+      if not self._scrollbar then
+        self._scrollbar=tgl.Scrollbar:new(
+          tgl.Size2:newFromSize(self.size2.x2,self.size2.y1,1,maxH))
+        if self.enabled then self._scrollbar:enable() end
+      end
+      self._scrollbar.size2:moveToPos2(tgl.Pos2:new(self.size2.x2,self.size2.y1))
+      self._scrollbar.hitArea=self.size2
+      self._scrollbar.z_index=self.z_index
+      self._scrollbar.maxScroll=math.max(0,#vlines-maxH)
+      self._scrollbar.visibleSize=maxH
+      self._scrollbar.scroll=self.viewY
+      self._scrollbar.onChange=function(s)
+        self.viewY=s
+        local rr=tgl.sys.renderer
+        rr:stop() self:render() rr:flush()
+      end
+    else
+      if self._scrollbar then
+        if self.enabled then self._scrollbar:disable() end
+        self._scrollbar=nil
+      end
+      self.viewY=0
+    end
+    if lnw>0 then
+      r:fill(tgl.Size2:newFromSize(self.size2.x1,self.size2.y1,lnw,maxH)," ",lnCol2,self.z_index)
+    end
+    local textX=self.size2.x1+lnw
+    local textW=scrollActive and mw or (self.size2.sizeX-lnw)
+    r:fill(tgl.Size2:newFromSize(textX,self.size2.y1,textW,maxH)," ",self.col2,self.z_index)
+    local y=self.size2.y1
+    for vi=self.viewY+1,#vlines do
+      if y>self.size2.y2 then break end
+      local vl=vlines[vi]
+      if lnw>0 then
+        local numStr=vl.startVC==0 and string.format("%"..(lnw-1).."d ",vl.li) or string.rep(" ",lnw)
+        r:set(tgl.Pos2:new(self.size2.x1,y),numStr,lnCol2,self.z_index)
+      end
+      if #vl.text>0 then
+        r:set(tgl.Pos2:new(textX,y),vl.text,self.col2,self.z_index)
+      end
+      y=y+1
+    end
+    if scrollActive then self._scrollbar:render() end
+    return
+  end
+
   local lineCount=0
   for _ in (self.text.."\n"):gmatch("[^\n]*\n") do lineCount=lineCount+1 end
   local scrollActive=self.showScroll and lineCount>maxH
@@ -630,20 +721,27 @@ function tgl.InputBox:render()
     end
     self.viewY=0
   end
-  local fillSize=scrollActive
-    and tgl.Size2:newFromSize(self.size2.x1,self.size2.y1,maxW,maxH)
-    or self.size2
-  r:fill(fillSize," ",self.col2,self.z_index)
-  local tabRepl=string.rep(" ",self.tabSize)
+  local lnw=self.lineNumbers and (#tostring(lineCount)+1) or 0
+  local lnCol2=lnw>0 and (self.lineNumCol2 or tgl.Color2:new(tgl.defaults.colors16.darkgray,self.col2[2])) or nil
+  local textMaxW=maxW-lnw
+  local textX=self.size2.x1+lnw
+  if lnw>0 then
+    r:fill(tgl.Size2:newFromSize(self.size2.x1,self.size2.y1,lnw,maxH)," ",lnCol2,self.z_index)
+  end
+  local textW=scrollActive and textMaxW or (self.size2.sizeX-lnw)
+  r:fill(tgl.Size2:newFromSize(textX,self.size2.y1,textW,maxH)," ",self.col2,self.z_index)
   local y=self.size2.y1
   local lineN=0
   for line in (self.text.."\n"):gmatch("([^\n]*)\n") do
     lineN=lineN+1
     if lineN>self.viewY then
       if y>self.size2.y2 then break end
+      if lnw>0 then
+        r:set(tgl.Pos2:new(self.size2.x1,y),string.format("%"..(lnw-1).."d ",lineN),lnCol2,self.z_index)
+      end
       line=line:gsub("\t",tabRepl)
-      if unicode.wlen(line)>maxW then line=unicode.sub(line,1,maxW) end
-      if #line>0 then r:set(tgl.Pos2:new(self.size2.x1,y),line,self.col2,self.z_index) end
+      if unicode.wlen(line)>textMaxW then line=unicode.sub(line,1,textMaxW) end
+      if #line>0 then r:set(tgl.Pos2:new(textX,y),line,self.col2,self.z_index) end
       y=y+1
     end
   end
@@ -657,8 +755,12 @@ function tgl.InputBox:input(startX,startY)
   local maxH=self.size2.sizeY
   local tabRepl=string.rep(" ",self.tabSize)
 
+  local function getLNW()
+    if not self.lineNumbers then return 0 end
+    return #tostring(#lines)+1
+  end
   local function getMaxW()
-    return self.size2.sizeX-(self._scrollbar and 1 or 0)
+    return self.size2.sizeX-(self._scrollbar and 1 or 0)-getLNW()
   end
 
   local function visualToCol(line,vx)
@@ -672,47 +774,148 @@ function tgl.InputBox:input(startX,startY)
     return unicode.wlen(line)+1
   end
 
+  local function expandedVColToCol(origLine,totalVC)
+    local acc=0
+    for i=1,unicode.wlen(origLine) do
+      local ch=unicode.sub(origLine,i,i)
+      local w=(ch=="\t") and self.tabSize or unicode.charWidth(ch)
+      if acc+w>totalVC then return i end
+      acc=acc+w
+    end
+    return unicode.wlen(origLine)+1
+  end
+
   local ln=1
   local col=1
+  local vlines={}
+
+  local function buildVL()
+    local mw=getMaxW()
+    local vl={}
+    for li,line in ipairs(lines) do
+      local exp=line:gsub("\t",tabRepl)
+      local len=unicode.wlen(exp)
+      if len==0 then
+        vl[#vl+1]={li=li,text="",startVC=0}
+      else
+        local pos=1
+        while pos<=len do
+          vl[#vl+1]={li=li,text=unicode.sub(exp,pos,math.min(pos+mw-1,len)),startVC=pos-1}
+          pos=pos+mw
+        end
+      end
+    end
+    return vl
+  end
+
+  local function cursorVPos()
+    local mw=getMaxW()
+    local vc=0
+    for i=1,col-1 do
+      local ch=unicode.sub(lines[ln],i,i)
+      vc=vc+(ch=="\t" and self.tabSize or unicode.charWidth(ch))
+    end
+    for vi,vl in ipairs(vlines) do
+      if vl.li==ln then
+        local isLast=(vi==#vlines) or (vlines[vi+1].li~=ln)
+        if isLast or vc<vl.startVC+mw then
+          return vi,vc-vl.startVC
+        end
+      end
+    end
+    return math.max(1,#vlines),0
+  end
+
+  if self.wrap then vlines=buildVL() end
+
   if startX and startY then
-    ln=math.max(1,math.min(#lines,startY-self.size2.y1+self.viewY+1))
-    col=visualToCol(lines[ln],startX-self.size2.x1)
+    local effStartX=math.max(0,startX-self.size2.x1-getLNW())
+    if self.wrap then
+      local vi=startY-self.size2.y1+self.viewY+1
+      vi=math.max(1,math.min(#vlines,vi))
+      local vl=vlines[vi]
+      ln=vl.li
+      local totalVC=vl.startVC+effStartX
+      col=expandedVColToCol(lines[ln],totalVC)
+      col=math.max(1,math.min(col,unicode.wlen(lines[ln])+1))
+    else
+      ln=math.max(1,math.min(#lines,startY-self.size2.y1+self.viewY+1))
+      col=visualToCol(lines[ln],effStartX)
+    end
   end
   if self.clearOnClick then
     lines={""}
     ln=1 col=1
     self.viewY=0
+    if self.wrap then vlines=buildVL() end
   end
 
   local function ensureVisible()
-    if ln-1<self.viewY then self.viewY=ln-1 end
-    if ln-1>=self.viewY+maxH then self.viewY=ln-maxH end
+    if self.wrap then
+      local vi,_=cursorVPos()
+      local vr=vi-1
+      if vr<self.viewY then self.viewY=vr end
+      if vr>=self.viewY+maxH then self.viewY=vr-maxH+1 end
+    else
+      if ln-1<self.viewY then self.viewY=ln-1 end
+      if ln-1>=self.viewY+maxH then self.viewY=ln-maxH end
+    end
     if self._scrollbar then self._scrollbar.scroll=self.viewY end
   end
 
   local function renderEdit()
     local maxW=getMaxW()
-    local fillSize=self._scrollbar
-      and tgl.Size2:newFromSize(self.size2.x1,self.size2.y1,maxW,maxH)
-      or self.size2
-    r:fill(fillSize," ",self.col2,self.z_index)
-    for i=1,maxH do
-      local li=i+self.viewY
-      if li>#lines then break end
-      local line=lines[li]:gsub("\t",tabRepl)
-      if unicode.wlen(line)>maxW then line=unicode.sub(line,1,maxW) end
-      if #line>0 then
-        r:set(tgl.Pos2:new(self.size2.x1,self.size2.y1+i-1),line,self.col2,self.z_index)
-      end
+    local lnw=getLNW()
+    local lnCol2=lnw>0 and (self.lineNumCol2 or tgl.Color2:new(tgl.defaults.colors16.darkgray,self.col2[2])) or nil
+    local textX=self.size2.x1+lnw
+    if lnw>0 then
+      r:fill(tgl.Size2:newFromSize(self.size2.x1,self.size2.y1,lnw,maxH)," ",lnCol2,self.z_index)
     end
-    local cy=ln-self.viewY
-    if cy>=1 and cy<=maxH then
-      local prefix=unicode.sub(lines[ln],1,col-1):gsub("\t",tabRepl)
-      local cx=unicode.wlen(prefix)
-      if cx<getMaxW() then
-        local rawChar=unicode.sub(lines[ln],col,col)
+    local textW=self._scrollbar and maxW or (self.size2.sizeX-lnw)
+    r:fill(tgl.Size2:newFromSize(textX,self.size2.y1,textW,maxH)," ",self.col2,self.z_index)
+    if self.wrap then
+      for i=1,maxH do
+        local vi=i+self.viewY
+        if vi>#vlines then break end
+        local vl=vlines[vi]
+        if lnw>0 then
+          local numStr=vl.startVC==0 and string.format("%"..(lnw-1).."d ",vl.li) or string.rep(" ",lnw)
+          r:set(tgl.Pos2:new(self.size2.x1,self.size2.y1+i-1),numStr,lnCol2,self.z_index)
+        end
+        if #vl.text>0 then
+          r:set(tgl.Pos2:new(textX,self.size2.y1+i-1),vl.text,self.col2,self.z_index)
+        end
+      end
+      local vi,vcx=cursorVPos()
+      local cy=vi-self.viewY
+      if cy>=1 and cy<=maxH and vcx<maxW then
+        local vl=vlines[vi]
+        local rawChar=unicode.sub(vl.text,vcx+1,vcx+1)
         local dispChar=(rawChar=="" or rawChar=="\t") and " " or rawChar
-        r:set(tgl.Pos2:new(self.size2.x1+cx,self.size2.y1+cy-1),dispChar,self.cursorCol2,self.z_index+1)
+        r:set(tgl.Pos2:new(textX+vcx,self.size2.y1+cy-1),dispChar,self.cursorCol2,self.z_index+1)
+      end
+    else
+      for i=1,maxH do
+        local li=i+self.viewY
+        if li>#lines then break end
+        if lnw>0 then
+          r:set(tgl.Pos2:new(self.size2.x1,self.size2.y1+i-1),string.format("%"..(lnw-1).."d ",li),lnCol2,self.z_index)
+        end
+        local line=lines[li]:gsub("\t",tabRepl)
+        if unicode.wlen(line)>maxW then line=unicode.sub(line,1,maxW) end
+        if #line>0 then
+          r:set(tgl.Pos2:new(textX,self.size2.y1+i-1),line,self.col2,self.z_index)
+        end
+      end
+      local cy=ln-self.viewY
+      if cy>=1 and cy<=maxH then
+        local prefix=unicode.sub(lines[ln],1,col-1):gsub("\t",tabRepl)
+        local cx=unicode.wlen(prefix)
+        if cx<maxW then
+          local rawChar=unicode.sub(lines[ln],col,col)
+          local dispChar=(rawChar=="" or rawChar=="\t") and " " or rawChar
+          r:set(tgl.Pos2:new(textX+cx,self.size2.y1+cy-1),dispChar,self.cursorCol2,self.z_index+1)
+        end
       end
     end
     if self._scrollbar then
@@ -723,7 +926,8 @@ function tgl.InputBox:input(startX,startY)
   end
 
   local function updateScrollbar()
-    local needScroll=self.showScroll and #lines>maxH
+    local totalRows=self.wrap and #vlines or #lines
+    local needScroll=self.showScroll and totalRows>maxH
     if needScroll then
       if not self._scrollbar then
         self._scrollbar=tgl.Scrollbar:new(
@@ -731,8 +935,9 @@ function tgl.InputBox:input(startX,startY)
         self._scrollbar.hitArea=self.size2
         self._scrollbar.z_index=self.z_index
         event.listen("scroll",self._scrollbar.scrollHandler)
+        if self.wrap then vlines=buildVL() totalRows=#vlines end
       end
-      self._scrollbar.maxScroll=math.max(0,#lines-maxH)
+      self._scrollbar.maxScroll=math.max(0,totalRows-maxH)
       self._scrollbar.visibleSize=maxH
       self._scrollbar.scroll=self.viewY
       self._scrollbar.onChange=function(s)
@@ -742,6 +947,7 @@ function tgl.InputBox:input(startX,startY)
       if self._scrollbar then
         event.ignore("scroll",self._scrollbar.scrollHandler)
         self._scrollbar=nil
+        if self.wrap then vlines=buildVL() end
         self.viewY=0
       end
     end
@@ -774,8 +980,19 @@ function tgl.InputBox:input(startX,startY)
           self._scrollbar:setScroll(startScroll+math.floor((dy-ty)*self._scrollbar.maxScroll/trackH))
         end
       elseif tgl.util.pointInSize2(tx,ty,self.size2) then
-        ln=math.max(1,math.min(#lines,ty-self.size2.y1+self.viewY+1))
-        col=visualToCol(lines[ln],tx-self.size2.x1)
+        local effX=math.max(0,tx-self.size2.x1-getLNW())
+        if self.wrap then
+          local vi=ty-self.size2.y1+self.viewY+1
+          vi=math.max(1,math.min(#vlines,vi))
+          local vl=vlines[vi]
+          ln=vl.li
+          local totalVC=vl.startVC+effX
+          col=expandedVColToCol(lines[ln],totalVC)
+          col=math.max(1,math.min(col,unicode.wlen(lines[ln])+1))
+        else
+          ln=math.max(1,math.min(#lines,ty-self.size2.y1+self.viewY+1))
+          col=visualToCol(lines[ln],effX)
+        end
       elseif self.stopOnClickOutside then
         break
       end
@@ -826,6 +1043,7 @@ function tgl.InputBox:input(startX,startY)
         col=col+unicode.charWidth(ch)
       end
     end
+    if self.wrap then vlines=buildVL() end
     updateScrollbar()
     ensureVisible()
     renderEdit()
