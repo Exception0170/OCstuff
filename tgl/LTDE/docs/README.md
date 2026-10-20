@@ -1,16 +1,15 @@
 # LTDE documentation
 
-Start with [the overview and installation guide](../README.md) in the release
-archive. In the source tree, that guide is [ABOUT.md](../ABOUT.md).
+For installation and a desktop overview, read [ABOUT.md](../ABOUT.md).
+The release archive also includes that guide as README.md.
 
-- [Writing an app](APPS.md): bundle layout, windows, events and cleanup.
-- [Explorer](EXPLORER.md): file operations, search and properties.
-- [Command Prompt](CMD.md): commands, terminal and command-module APIs.
-- [Configuration](CONFIG.md): app configs and system settings.
-- [Control Panel](CONTROL_PANEL.md): settings pages and persistence.
-- [Task Manager](TASK_MANAGER.md): process management.
-- [Services](SERVICES.md): service manifests, startup and shutdown.
-- [My Computer](MY_COMPUTER.md): system information.
-- [Calculator](CALCULATOR.md): buttons, expressions and the shared engine.
-- [Redstone Control](REDCTL.md): sides, channels and outputs.
-- [Start menu](START_MENU.md): application discovery and search.
+- [Using the apps](USING_APPS.md): a short reference for the bundled programs.
+- [Writing an app](APPS.md): manifest, arguments and a working window example.
+- [Internals](INTERNALS.md): startup, module layout and shutdown.
+- [Windows](WINDOWS.md): ltwm, drawing, ltwapi, menus and dialogs.
+- [Processes and permissions](PROCESSES.md): runctl, ownership and access checks.
+- [Events](EVENTS.md): ltevent, focus, custom events and cleanup.
+- [Configuration](CONFIG.md): cfglib, associations and shared file colors.
+- [Settings pages](SETTINGS.md): Control Panel definitions and saving changes.
+- [Services](SERVICES.md): background programs and lifecycle APIs.
+- [Command Prompt](CMD.md): commands, lterm and adding command modules.

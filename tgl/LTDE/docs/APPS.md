@@ -95,7 +95,8 @@ TGL provides Text, Button, EventButton, InputField, Frame and ScrollFrame.
 - `ltfiletypes`: optional shared foreground colors for file entries.
 
 `ltcfg` contains the loaded system configs. Prefer an app-owned config file for
-app settings. The CONFIG and CMD guides describe the relevant APIs in detail.
+app settings. See [Windows](WINDOWS.md), [Processes and permissions](PROCESSES.md),
+[Events](EVENTS.md), [Configuration](CONFIG.md) and [CMD](CMD.md) for details.
 
 Use unique event names for each window or app instance. On exit, cancel your
 timers, remove your listeners, disable controls and close your windows. Handle

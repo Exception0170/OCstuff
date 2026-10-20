@@ -2,7 +2,7 @@
 
 LTDE supplies `cfglib` directly to app environments, like `ltwapi`.
 The implementation stays at `/ltde/sys/cfglib.lua`; no OpenOS library
-installation or `require` call is needed. Restart LTDE after updating.
+installation or `require` call is needed.
 
 ## App configuration
 
@@ -45,8 +45,8 @@ remembered path; pass the path on each save, or load the saved file afterward.
   use the restricted filesystem API. Other exposed component methods remain
   available according to `componentAccess`.
 - `noSandbox` alone no longer selects global execution: the manifest must declare
-  `mode="system"`. The system-app trust model and the broader sandbox/event bus
-  still need the planned LTDEv2 work; this is not a claim of a fully secure sandbox.
+  `mode="system"`. Restricted environments still share the event bus and are not a complete
+  security sandbox.
 
 Sandboxed apps receive a private `cfglib` global. System-mode apps receive
 the full library. The system `ltcfg` cache is not injected into sandboxed
@@ -103,3 +103,20 @@ it returns `true` or `nil, error`, retaining the old config on failure.
 Control Panel edits update that cache directly. Changes appear on the next
 Explorer refresh or directory listing. This global does not grant sandboxed
 apps access to system config files.
+
+## File associations
+
+Apps declare `opens={"txt","lua"}` or `opens={"*"}` in their manifest.
+At startup, LTDE scans apps in alphabetical order; the first claimant for an
+extension wins. `/ltde/cfg/associations.conf` overrides these choices:
+
+```ini
+default=/ltde/apps/notepad.app
+[extensions]
+txt=/ltde/apps/notepad.app
+```
+
+Extensions are case insensitive. Restart LTDE after changing associations or
+manifest handlers. `ltwapi.openFile(path)` passes the file as the handler's first
+argument and returns a Program or `nil,error`. It accepts files, not folders.
+Explorer handles `.app` directory launching separately.

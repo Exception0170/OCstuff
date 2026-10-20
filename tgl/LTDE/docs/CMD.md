@@ -330,5 +330,23 @@ so newly added command modules also become completion candidates.
 ### Calculator
 
 `calc <expression>` evaluates arithmetic using the same engine
-as Calculator. Example: `calc "sqrt(81)+2^3"`. See `CALCULATOR.md` for
-functions, precedence and limits. `run calc.app` opens the button/keyboard UI.
+as Calculator. Example: `calc "sqrt(81)+2^3"`.
+`run calc.app` opens the button/keyboard UI.
+
+CMD `calc` accepts decimal/scientific numbers, `+ - * /`, unary signs,
+parentheses, and `^`. Powers associate right-to-left; `-2^2` is `-4`.
+Constants are `pi` and `e`. Functions take one argument in parentheses:
+`sqrt abs sin cos tan asin acos atan ln log exp floor ceil`.
+Trig uses radians, `ln` is natural logarithm and `log` is base 10.
+There is no implicit multiplication, percentage operator or complex support.
+
+Each invocation starts independently (`ans` is initially 0). Expressions have
+a 512-character limit and bounded nesting. Results show 12 significant digits.
+Invalid input, division by zero and non-finite results return errors. Output
+can be redirected like other commands.
+
+The window and command share `/ltde/sys/slib/ltcalc.lua`. System code can load it
+with `loadfile(...)()`. `evaluate(expression,extended,ans)` returns a number or
+`nil,error`; `format(number)` returns the display string. The command passes
+`true` for extended mode. The engine parses its own grammar and never executes
+an expression as Lua code.

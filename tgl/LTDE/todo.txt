@@ -145,6 +145,7 @@ shutdown routine (in core.lua)
   [x] renderer:finish() + term.clear() + computer.shutdown() or os.exit()
 
 [x] overview, installation guide, app-writing guide and documentation index
+[x] internals, windows/ltwapi, runctl/permissions and event documentation
 [x] release build v1.0.2010; bundled TGL and release archive
 [x] disable debug logging/manual crash shortcut; exclude dbgev from release
 [x] Tier2/Ocelot-verified buffered window movement/focus and scrolling; no flicker
@@ -168,7 +169,7 @@ shutdown routine (in core.lua)
         [x] View Properties: file details, recursive folder size/counts, partial-size reporting
         [x] milliseconds date conversion, four-digit years, preserve selection scroll
         [x] safe move conflicts/cancellation, nested destination and link checks
-        [x] buffered modal progress/conflict dialogs; docs/EXPLORER.md
+        [x] buffered modal progress/conflict dialogs; docs/USING_APPS.md
         [x] mock tests for file operations, dates, associations, menus and listener cleanup
   [x] Control Panel (control.app, system mode)
         [x] registered Appearance/System pages; labels/descriptions from .conf metadata
@@ -176,14 +177,14 @@ shutdown routine (in core.lua)
         [x] Apply/OK/Cancel, pending changes, restart markers and reminders
         [x] wallpaper/drag cursor apply immediately; core settings saved via cfglib
         [x] safe file replacement, write errors, concurrent-edit detection
-        [x] mock persistence/UI tests and listener cleanup; docs/CONTROL_PANEL.md
+        [x] mock persistence/UI tests and listener cleanup; docs/SETTINGS.md
   [x] Task Manager (taskmgr.app, system mode)
         [x] live scrollable application/service list with PID, state and type
         [x] Switch To restores/focuses an application window
         [x] confirmed End Task; shared runctl exit cleanup closes owned windows
         [x] system RAM and GPU buffer usage, one-second polling, change-only redraw
         [x] trusted ltproc snapshots/termination API; self/stale PID protection
-        [x] mock lifecycle/UI tests and listener cleanup; docs/TASK_MANAGER.md
+        [x] mock lifecycle/UI tests and listener cleanup; docs/PROCESSES.md
   [x] My Computer (mycomputer.app, system mode)
         - Compact 44-column system summary and scrollable component list
         - Refresh and component hotplug updates

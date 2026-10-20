@@ -2,9 +2,8 @@
 
 Services are background programs managed by `runctl`. They use the same process
 execution and cleanup as apps, with a service manager for discovery, startup,
-single instances, and stop/restart transitions. Existing core components remain
-core-owned; installing this feature does not move the renderer or window manager
-into service processes.
+single instances, and stop/restart transitions. The renderer, window manager and other desktop
+components remain core-owned; they are not service processes.
 
 ## Create a service
 
@@ -37,8 +36,7 @@ end
 -- Release any listeners, timers, or handles registered by this service here.
 ```
 
-Restart LTDE to discover newly installed services. They appear in Task Manager
-while stopped and can be started manually. The service identifier is the folder
+Restart LTDE to discover newly installed services. The service identifier is the folder
 name without `.service`; use letters, digits, underscores, or hyphens.
 
 For automatic startup, edit `/ltde/cfg/services.conf`:
@@ -49,12 +47,12 @@ heartbeat=true
 ```
 
 Only explicitly enabled services start at boot, in identifier order. No optional
-services are enabled by default. Failed startup is logged; Task Manager shows
-Failed. Automatic crash-restart loops are not enabled.
+services are enabled by default. Failed startup is logged and recorded as Failed in the service registry.
+Automatic crash-restart loops are not enabled.
 
 ## Lifecycle
 
-Task Manager provides **Start Service**, **Stop Service**, and **Restart Service**.
+The service manager provides start, stop and restart operations.
 Start refuses a duplicate running instance. Stop emits `ltde_service_stop,pid`;
 the service must check that the PID matches its own, release resources, and return.
 After five seconds, a service that has not returned is forcibly terminated.
@@ -78,17 +76,18 @@ local ok,err=ltproc.service("stop","heartbeat")
 local ok,err=ltproc.service("restart","heartbeat")
 ```
 
-Stop/Restart return after requesting the transition. Poll `ltproc.list()` to
-observe completion. Snapshots now include `kind="application"` or `"service"`.
-A service has a stable `id="service:<name>"`, a `serviceId`, a current numeric `pid`
-when running, `state`, and `protected`. Stopped services remain in the list.
-Application IDs remain numeric. `ltproc.terminate()` refuses services; use their
-lifecycle API instead. `ps` includes running services, but not stopped ones.
+Stop/Restart return after requesting the transition, not after the service has
+finished stopping. The core's service-manager timer checks for exit or timeout.
 
-## Ocelot checks
+Inside the core, `services.list()` returns independent service records with
+`id="service:<name>"`, `serviceId`, the current `pid` when running, `name`,
+`kind="service"`, `running`, `protected` and `state`. Stopped services remain in
+that registry. This manager is a core-local object, not an app global.
 
-Install the example, restart LTDE, and test manual Start, Stop, Restart, and boot
-startup. Verify duplicate Start is rejected and stopped entries remain visible.
-Test an uncooperative service with disposable state to check the five-second
-forced-stop fallback. Confirm protected services reject Stop/Restart and that
-LTDE shutdown still stops them. Recheck app-crash dialogs and View log.
+The current `ltproc.list()` exposes application snapshots only; it does not
+merge these service records. Task Manager has service action controls but its
+list receives those application snapshots. To start/stop a known service from
+system app code, use `ltproc.service`. CMD `ps` obtains its own running-program
+snapshot from the core and includes running services.
+
+`ltproc.terminate()` rejects service processes; use their lifecycle API instead.

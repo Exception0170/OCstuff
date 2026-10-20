@@ -1,16 +1,13 @@
 # LTDE 1.0
 
-LTDE is a small desktop for OpenComputers, built on OpenOS and TGL. It has a
+LTDE is a small desktop shell for OpenComputers, built on OpenOS and TGL. It has a
 Windows 95 style interface with movable windows, a taskbar, a Start menu, and
 applications for everyday file and system tasks.
-
-This release is `release build v1.0.2010`. It includes TGL 0.9.5, tgl-ui and
-tgl-img. You do not need to download those separately.
 
 ## What you need
 
 - OpenComputers with OpenOS, running the **Lua 5.3** architecture.
-- A Tier 2 GPU and screen or better. An 80x25 screen is a good starting point.
+- A Tier 2 GPU and screen or better.
 - At least **1 MB RAM**. More RAM helps when several apps are open.
 - A writable disk and a keyboard.
 
@@ -78,15 +75,12 @@ TGL debug logging and LTDE's manual crash shortcut are disabled in this release.
 Normal session logs and error reports are still available. `dbgev.app` is not
 included.
 
-## Apps and version 2
+## Writing apps
 
 Version 1 apps run in system mode. Install apps you trust: this version does not
 provide a complete application sandbox. A `.app` is a folder containing a
 manifest and a Lua entry point. See [Writing an app](docs/APPS.md) for an example.
 
-Right-click context menus, themes, desktop icons, password protection and full
-app sandboxing are planned for v2.
-
 ## More information
 
-See [the documentation index](docs/README.md) for the app guides and APIs.
+See [the documentation index](docs/README.md) for internals, app APIs and usage notes.
