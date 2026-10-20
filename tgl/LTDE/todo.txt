@@ -1,0 +1,371 @@
+LTDE TODO:
+=========
+LTDEv1 = functional barebones desktop
+LTDEv2 = more complete, polished desktop
+LTDEv3 = MCNnet3 & web support
+
+=[ PHASE 1: Core Infrastructure ]=
+
+prmgr.lua
+  [x] define permission constants: fullDiskIO, runPrograms, componentAccess, noSandbox, rootAccess
+  [x] checkPerms(n) - validate bitmask has no unknown bits
+  [x] getPermission(n, name) - query individual perm
+  [x] grantPermission(n, name) - return new bitmask with perm added
+  [x] revokePermission(n, name)
+  [x] system apps (rootAccess) bypass all checks silently
+
+runctl.lua
+  [x] fix getNextID bug (returns global nextID instead of runctl.nextID)
+  [x] program registry table: runctl.programs[id] = Program
+  [x] Program:load() - read manifest.lua, set mode and default perms
+  [x] Program:run() - launch in thread (thread.create), store thread ref
+  [x] Program:signal(event, ...) - push event into program's thread
+  [x] Program:terminate() - kill thread, cleanup
+  [x] system mode launch: load with real tgl/fs/component, no sandbox
+  [ ] sandboxed mode launch: proxy tgl (capture renderer), restricted fs, fake event
+      NOTE: env scaffolding done; deferred to LTDEv2
+  [x] restricted fs: wrap all path ops, block outside .app root, swap if fullDiskIO
+  [x] system app detection: rootAccess + noSandbox granted silently by core, no user prompt
+  [x] shutdown routine:
+        - broadcast "ltde_shutdown" to all running programs
+        - wait for exit or timeout (5s default)
+        - force-terminate any remaining
+        - once all done: returns to shell (shutdown/restart dialog is Phase 3)
+
+core.lua
+  [x] remove error("dev") stub
+  [x] init sequence: renderer -> ltwm -> event loop
+  [x] init sequence: desktop wallpaper + taskbar boot (Phase 3)
+  [x] scan /ltde/apps/ and register available apps (for start menu, done at runtime) (Phase 3)
+  [x] main event loop: pull events, handle ltde_shutdown_request, ltde_app_exit, ltde_open_app
+  [x] handle "ltde_open_app" event -> runctl launch
+  [x] handle "ltde_shutdown_request" -> begin shutdown routine
+
+=[ PHASE 2: Window Manager & APIs ]= COMPLETE
+
+ltwm.lua
+  [x] ManagedWindow structure: {frame, pid, noTaskbar, minimized}
+  [x] ltwm.pidWindows[pid] = { ManagedWindow, ... } for multi-window per app
+  [x] addWindow(frame, pid, noTaskbar) - cascade, always z=maxZ+1 (new windows on top)
+  [x] addWindowDirect - no cascade, for system UI
+  [x] closeWindow - disableAll, redraw damaged regions through buffered compositor
+  [x] minimizeWindow / restoreWindow with disableAll/enableAll
+  [x] drag-to-move: title bar touch -> thread waits for drop, skips if no movement
+  [x] bringToFront - fires frame.onFocusChange(true/false) on old/new active window
+  [x] renderAll - full-screen bgCol2 at z=-1 + all visible windows, immediate flush via r:flush()
+  [x] bgCol2 / setBackground(col2) for wallpaper color
+  [x] fix: event.push with table args silently dropped by OC - removed event-based
+        close/minimize, switched to direct Button callbacks
+
+ltwapi.lua (system mode)
+  [x] ltwapi.addWindow(sizeX, sizeY, title, opts) -> frame, contentSize2
+        title bar: [ - ] minimize, [ title ], [ X ] close
+        opts.toolbar: toolbar row with white popup menus
+        opts.onClose: callback fired when X is pressed
+        opts.menuItems: toolbar menu items
+  [x] ltwapi.removeWindow(frame)
+  [x] ltwapi.setTitle(frame, title)
+  [x] ltwapi.showMenu(anchorPos2, items, col2) - blocking popup menu
+  [x] ltwapi.minimize(frame)
+  [x] ltwapi.focus(frame) - bringToFront + active title bar color
+  [x] ltwapi.setToolbarEnabled(frame, enabled)
+  [x] win95-style: frame bg=lightgray, active title=darkblue, inactive title=darkgray
+  [x] frame.onFocusChange(bool) wired to title bar / minimize button color swap
+  [ ] ltwapi sandboxed mode (deferred to LTDEv2)
+
+ltnotify.lua
+  [x] notify(title, text, timeout) - top-right, slot-based stacking (maxNotifications=3)
+  [x] dialog(title, text, buttons) - blocking modal above current window/child z-indexes
+  [x] elevate(perm, reason) - calls dialog("Allow"/"Deny"), returns bool
+  [x] suspend ltwm focus/drag during dialog (wmgr.locked=true)
+
+tgl fixes (renderer.lua, objects.lua)
+  [x] renderer:flush() - resume + immediate GPU flush (no 50ms wait)
+  [x] renderer:finish() - properly resets timer/state so renderer can restart in same session
+  [x] Button.onClick - _clicking flag prevents ghost renders after disableAll
+
+=[ PHASE 3: Desktop Shell ]=
+
+taskbar (ltde/sys/taskbar.lua, system frame)
+  [x] 1-row frame pinned at screenSizeY, z=9000 (above all windows), noTaskbar=true
+  [x] [Start] button on left (fires "ltde_start_menu" string event)
+  [x] window tabs: one per ManagedWindow where noTaskbar=false
+        - tab text: truncated title (max 10 chars), minimized = [bracketed]
+        - active window tab highlighted (darkblue bg)
+        - click: restoreWindow (if minimized) or bringToFront
+  [x] re-render on ltde_taskbar_update (open/close/minimize/restore)
+  [x] re-render on wmgr.onFocusChange (active tab color stays current)
+  [x] ltwm: focusHandler skips noTaskbar windows (no drag, no focus steal)
+  [x] ltwm: wmgr.onFocusChange callback set by taskbar
+  [x] core.lua: wallpaper drawn before taskbar init (reads display.conf)
+  [x] core.lua: boots taskbar after ltwm/ltwapi/ltnotify
+
+start menu (ltde/sys/startmenu.lua, noTaskbar=true)
+  [x] opens upward from [Start] button on click
+  [x] TGL frames/buttons/InputField/ScrollFrame, all apps, alphabetical search
+  [x] OS name top-to-bottom; managed popup and power-menu cleanup
+  [x] rescan /apps/*.app/manifest.lua on each open
+  [x] scrollable list via ScrollFrame
+  [x] click app -> event.push("ltde_open_app", appPath)
+  [x] [Shutdown] -> event.push("ltde_shutdown_request")
+  [x] dismiss on click outside (ScreenSave + restore)
+
+config system (ltde/cfg/)
+  [x] config loading system during startup (cfglib.loadDir at core boot)
+  [x] cfglib: .conf parser with sections, #: metadata, type detection, save()
+
+additions
+  [x] remake toolbar menus: gray background, tgl.Frame with inline borders instead of plain fill
+  [x] shutdown dialog in start menu (exit shell / restart ltde / poweroff / restart pc / cancel)
+  [x] startup splash screen (logo, status line, wallpaper bg color)
+  [x] startup progress bar follows completed stages through desktop readiness
+  [x] configured startup delay pauses once at completion, not at each stage
+  [x] core-owned notification expiry survives app exit; pending draws flushed on cleanup
+  [x] shutdown splash screen ("Please wait...")
+  [x] ltnotify.warn() - yellow title bar, beep
+  [x] ltnotify.error() - blue title bar, border, lighter body, blocking OK dialog
+  [x] app launch/crash error dialogs via ltnotify.error()
+  [x] app window auto-close on crash (runctl onExit closes pidWindows)
+  [x] _G cleanup on shutdown (ltwapi, ltnotify, ltde_taskbar, _ltde_version, tgl package)
+  [x] tgl renderer z-index buffer (getZ); replaces checkRendered color sampling for all widgets
+  [x] showMenu z-index fix (menu renders above window content)
+  [x] init.lua: total RAM < 1MB -> BSOD 0x000C before core loads
+  [x] core.lua: periodic memory monitor -> warn/BSOD 0xC00C
+  [x] core.conf: chksys toggle, renderer fps, splash on/off + delay, memory thresholds
+
+
+desktop (in core.lua or ltde/sys/desktop.lua)
+  [x] solid color wallpaper fill at z=0, full screen minus taskbar row
+  [x] calls wm:setBackground(wallCol) so renderAll repaints it
+  [x] color from /ltde/cfg/display.conf (cyan default if missing)
+
+shutdown routine (in core.lua)
+  [x] ltde_shutdown_request handler -> running=false -> exit loop
+  [x] runctl.shutdown(5) handles graceful signals and timeout; renderer/services also cleaned up
+  [x] renderer:finish() + term.clear() + computer.shutdown() or os.exit()
+
+[x] overview, installation guide, app-writing guide and documentation index
+[x] release build v1.0.2010; bundled TGL and release archive
+[x] disable debug logging/manual crash shortcut; exclude dbgev from release
+[x] Tier2/Ocelot-verified buffered window movement/focus and scrolling; no flicker
+[x] exact damage rectangles, nested scroll clipping, sparse buffer IDs, pending queue ordering
+[x] scrollbar no-op at limits, wheel/drag occlusion checks, active area checks
+[x] PID ownership resolved by coroutine; process registered before execution
+[x] notifications and dialogs above windows, expiry/cleanup restores desktop
+[x] TGL version 0.9.5
+
+=[ PHASE 4: System Apps ]=
+
+  [x] file explorer (.app, rootAccess+noSandbox)
+        [x] directory browsing, sorting, navigation history, multi-selection
+        [x] mounted device sidebar and device list, capacity/usage, r/rw
+        [x] mount change polling and safe background redraw
+        [x] basic file operations and progress dialogs
+        [x] file associations and .app folder launching
+        [x] current-folder Find and Find in files, Duplicate, Undo rename
+        [x] persistent bookmarks, sidebar/statusbar and List/Details toggles
+        [x] shared file clipboard between Explorer windows
+        [x] View Properties: file details, recursive folder size/counts, partial-size reporting
+        [x] milliseconds date conversion, four-digit years, preserve selection scroll
+        [x] safe move conflicts/cancellation, nested destination and link checks
+        [x] buffered modal progress/conflict dialogs; docs/EXPLORER.md
+        [x] mock tests for file operations, dates, associations, menus and listener cleanup
+  [x] Control Panel (control.app, system mode)
+        [x] registered Appearance/System pages; labels/descriptions from .conf metadata
+        [x] color swatches, boolean/numeric/text/app controls, field validation
+        [x] Apply/OK/Cancel, pending changes, restart markers and reminders
+        [x] wallpaper/drag cursor apply immediately; core settings saved via cfglib
+        [x] safe file replacement, write errors, concurrent-edit detection
+        [x] mock persistence/UI tests and listener cleanup; docs/CONTROL_PANEL.md
+  [x] Task Manager (taskmgr.app, system mode)
+        [x] live scrollable application/service list with PID, state and type
+        [x] Switch To restores/focuses an application window
+        [x] confirmed End Task; shared runctl exit cleanup closes owned windows
+        [x] system RAM and GPU buffer usage, one-second polling, change-only redraw
+        [x] trusted ltproc snapshots/termination API; self/stale PID protection
+        [x] mock lifecycle/UI tests and listener cleanup; docs/TASK_MANAGER.md
+  [x] My Computer (mycomputer.app, system mode)
+        - Compact 44-column system summary and scrollable component list
+        - Refresh and component hotplug updates
+  [x] Redctl (redctl.app, system mode)
+        - Normal/Bundled tabs; all six sides via dropdown
+        - Component selection, input/output readings, 16 bundled channels
+        - Explicit output writes, hardware errors, hotplug and change-only redraw
+        - Mock checks for writes, unsupported cards, removal and cleanup
+
+  [x] Calculator (calc.app)
+        - Button-based calculator with keyboard input mode
+        - Basic arithmetic in the default compact view
+        - Optional extended mode with additional mathematical functions
+        - Shared arithmetic parser, powers, scientific functions and radians
+
+  [x] cmd.app (LTDE native Command Prompt, trusted system apps)
+        [x] editable input, 100-entry session history, paste, 200-line styled scrollback
+        [x] File/Edit/View menus, shared LTDE clipboard, scrollbar and buffered redraw
+        [x] color attributes and program-controlled mixed-color output
+        [x] dynamic /ltde/sys/cmd/*.lua command discovery, help, session aliases
+        [x] quoted arguments and output redirection (> / >>)
+        [x] app/window/process commands: run, cmd, ps, ltwm, ver
+        [x] files: dir/ls, cd, pwd, type/cat, copy/cp, move/mv, ren,
+              mkdir, rmdir, del/rm, edit, tree, df
+        [x] console/system: echo, cls/clear, help, alias, color, history,
+              date, time, mem, uptime, notify, shutdown, quit-ltde
+        [x] ltwm refresh, aligned ps/ltwm tables
+        [x] kill <pid>, process cleanup and caller/service protections
+        [x] lterm + ltcmd API, command validation, trusted-caller permission checks
+        [x] docs/CMD.md overview and complete API reference
+        NOTE: native commands only in v1; OpenOS shell/Lua script emulation stays v2.
+        [x] calc command for v1
+              - Terminal counterpart to calc.app with equivalent calculation capabilities
+              - All calculation functions enabled by default
+              - Shared ltcalc engine; calc <expression>
+
+=[ PHASE 5: File Associations ]=
+
+  manifest.lua: opens field
+    [x] apps declare handled extensions: opens={"txt","lua"} or opens={"*"} for catch-all
+    [x] core.lua scans manifests at boot, builds _G._ltde_associations table
+        {ext -> appPath}; catch-all ("*") fills in for any unmatched extension
+    [x] notepad already declares opens={"*"} as the default catch-all
+
+  ltwapi.openFile(path)
+    [x] looks up extension in _G._ltde_associations
+    [x] runctl.launch(appPath, perms, {path})
+    [x] app arguments passed as varargs (...) (Notepad already supports this)
+
+  /ltde/cfg/associations.conf (user overrides, Phase 5 polish)
+    [x] [extensions] ext=appPath and root default=appPath override manifest defaults
+
+=========================================
+=[ LTDEv2 ]=
+=========================================
+
+=[ V2: Scope & Hardware Direction ]=
+  [ ] context menus, icons + TMG images, themes, and application sandboxing
+  [ ] OpenOS shell compatibility (possibly an optional addon)
+  [ ] tpaint (possibly an optional app, excluded from the base installation)
+  Proposed hardware split:
+    - LTDEv1 remains the Tier 2 GPU/monitor edition.
+    - LTDEv2 targets Tier 3 GPU/monitor capabilities; Tier 2 compatibility is
+      not a design constraint for v2, pending confirmation of this direction.
+    [ ] benchmark RAM/VRAM and redraw cost before setting final v2 requirements
+    [ ] budget app buffers, image caching, and terminal history explicitly
+
+=[ V2: Context Menus & Text Selection ]=
+  Deferred from LTDEv1 by scope decision.
+
+  Design note: context menus are triggered by right-click (OC touch button=1).
+  Right-click on taskbar tab, file in file manager, desktop, etc. shows a small
+  popup with context actions. Similar to ltwapi.showMenu but touch-positioned.
+
+  ltwapi.showContext(x, y, items, col2)
+    [ ] anchor at (x,y+1) like showMenu, but auto-flip if too close to screen edge
+    [ ] managed modal overlay + outside-click dismiss, with cleanup on error
+    [ ] items support separators (label="---" draws a line, not clickable)
+
+  integration points
+    [ ] taskbar: right-click tab -> {Restore/Minimize, Close} context menu
+    [ ] file manager: right-click file -> {Open, Delete, Rename, ...}
+    [ ] file manager: right-click .app package -> Open as folder to inspect its contents
+    [ ] desktop: right-click -> {Refresh, Settings shortcut}
+
+  right-click detection
+    [ ] Button handler currently ignores button arg - pass it through to callback
+    [ ] OR: separate event.listen("touch") with b==1 check per context target
+    NOTE: OC touch event args: (addr, x, y, button, player)
+          button 0 = left click, button 1 = right click
+
+  Selection & Copy/Paste?
+    [ ] Selecting text with TGL?
+    [ ] Copy/Paste: Ctrl+C override?
+
+
+=[ V2: Startup Screen ]=
+  [x] basic startup/shutdown splash screens
+  [ ] add better startup screen (visual polish, progress and clearer startup status)
+
+=[ V2: tglv10 Support ]=
+  [ ] update LTDE to target tglv10 API once released
+        - tgl.event system for clean listener tracking + shutdown
+        - tgl-img integrated into base tgl
+        - configurable default theme support in tgl
+
+=[ V2: Password Protection ]=
+  [ ] add password protection; define login/lock behavior and recovery
+
+=[ V2: Sandboxed Apps ]=
+  runctl.lua
+    [ ] sandboxed event bus: per-app event queue, ltwm routes touch inside app window
+    [ ] proxy tgl: capture renderer calls, queue to ltwapi display layer
+    [ ] fake fs with fullDiskIO bypass already scaffolded
+    [ ] ltde_elevate flow: app sends permission request, ltnotify.elevate blocks, result back
+
+  ltwapi.lua
+    [ ] sandboxed window proxy: app renders into an off-screen buffer
+    [ ] ltwm composites app buffer into the managed window on renderAll
+
+=[ V2: Desktop with Icons ]=
+  [ ] desktop icons: scan /ltde/apps/*.app, render icon grid with labels
+  [ ] double-click icon -> launch app
+  [ ] tgl-img / tmg icon support: .app bundle includes icon.tmg
+  [ ] icon rendering via tgl-img partial-render
+
+=[ V2: Terminal & Shell (possible addon) ]=
+  [ ] decide addon packaging; native cmd remains available without OpenOS shell support
+
+  terminal emulation (extends lterm; separate from native command processing)
+    [ ] full coordinate-offset term wrapper: setCursor, getCursor, clear,
+        clearLine, scroll — all offset to window content area
+    [ ] ANSI/VT escape code handling (colors, cursor movement)
+    [ ] scroll region: line buffer with configurable history depth
+    [ ] resize handling when window is moved/resized
+
+  OpenOS compatibility, introduced in stages
+    [ ] explicit runner for text-output programs: positional args, captured output,
+        working directory, exit/error handling, one foreground program per terminal
+    [ ] private print/io/term environment and compatible require() behavior;
+        never replace globals shared with other LTDE apps
+    [ ] line input, cancellation, and terminal/event ownership
+    [ ] interactive terminal compatibility before enabling arbitrary OpenOS tools
+
+  shell.app (possibly an optional addon)
+    [ ] OpenOS shell hosted through the terminal compatibility layer
+    [ ] callable from native cmd; report clearly when addon is not installed
+    [ ] define compatibility limits rather than claiming every OpenOS app works
+
+=[ V2: More Apps ]=
+  [ ] tpaint - graphical editor with TMG load/save support
+        - possibly distributed separately, not included in base LTDEv2
+        - reuse TGL image and palette support
+
+  [ ] About PC (.app) - "This Computer" info screen
+        - OC component list (CPU tier, RAM, GPU, screen resolution)
+        - OS version, uptime
+  [ ] Control Panel v2 (.app) - full settings hub
+        - icon grid with categories (Display, System, ...)
+        - Display: wallpaper color, resolution info
+        - System: component info, shutdown options
+        - themes: apply color scheme to all LTDE chrome
+
+=[ V2: Theme Support ]=
+  [ ] theme table: titlebar colors, desktop bg, window chrome, taskbar
+  [ ] /ltde/theme.lua - user theme file, loaded at boot
+  [ ] ltwapi: reads active theme for window chrome colors
+  [ ] built-in themes: classic (win95-style, current), dark, light
+
+=[ Services ]=
+  [x] service manifests in /ltde/services, runctl execution and cleanup
+  [x] explicit services.conf startup configuration, singleton instances
+  [x] Task Manager Start/Stop/Restart and stopped service entries
+  [x] targeted graceful stop, five-second timeout, protected services
+  [x] lifecycle/API/UI mock tests; docs/SERVICES.md
+
+=[ Public Configuration API ]=
+  [x] LTDE-owned cfglib global for system and sandboxed app configs
+  [x] per-app config/filesystem policy; /ltde/cfg restricted to system mode
+  [x] traversal, symbolic-link, alternate-mount and save-path checks
+  [x] block direct filesystem-component bypass in sandboxed component access
+  [x] API and policy tests; docs/CONFIG.md
+
+Completed: shared filetypes.conf foreground colors for Explorer and CMD dir.
+Completed: CMD Tab completion for commands, aliases, app names and file paths.
