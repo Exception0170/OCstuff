@@ -170,7 +170,7 @@ function tgl.Button:new(text,callback,pos2,color2)
     and tgl.util.pointInSize2(x,y,tgl.sys.activeArea) then
       if obj.text=="" then return end
       if obj.checkRendered then
-        if tgl.sys.renderer:getZ(obj.pos2.x,obj.pos2.y)>obj.z_index then return end
+        if tgl.sys.renderer:getZ(x,y)>obj.z_index then return end
       end
       if type(obj.onClick)=="function" then
         thread.create(obj.onClick):detach()
@@ -231,7 +231,7 @@ function tgl.EventButton(text,eventName,callValue,pos2,col2)
     and y==obj.pos2.y
     and tgl.util.pointInSize2(x,y,tgl.sys.activeArea) then
       if obj.checkRendered then
-        if tgl.sys.renderer:getZ(obj.pos2.x,obj.pos2.y)>obj.z_index then return end
+        if tgl.sys.renderer:getZ(x,y)>obj.z_index then return end
       end
       if type(obj.onClick)=="function" then
         thread.create(obj.onClick):detach()
@@ -241,6 +241,28 @@ function tgl.EventButton(text,eventName,callValue,pos2,col2)
   end
   obj.callback=nil
   return obj
+end
+
+---Extract a visible substring from s, skipping startW terminal-width cells from the left, up to maxW wide.
+local function _iFWidthSub(s,startW,maxW)
+  local i=1
+  local len=unicode.len(s)
+  local w=0
+  while i<=len and w<startW do
+    w=w+unicode.charWidth(unicode.sub(s,i,i))
+    i=i+1
+  end
+  local out={}
+  local ow=0
+  while i<=len and ow<maxW do
+    local ch=unicode.sub(s,i,i)
+    local cw=unicode.charWidth(ch)
+    if ow+cw>maxW then break end
+    out[#out+1]=ch
+    ow=ow+cw
+    i=i+1
+  end
+  return table.concat(out)
 end
 
 ---One-line text input
@@ -263,19 +285,23 @@ function tgl.InputField:new(text,pos2,col2)
   obj.secret=false
   obj.defaultText=text or "[______]"
   obj.pos2=pos2 or tgl.Pos2:new()
-  obj.col2=col2 or tgl.Color2:new()
+  obj.col2=col2 or tgl.defaults.colors2.white
   obj.eventName="InputEvent"
   obj.checkRendered=true
-  obj.charCol2=tgl.Color2:new(0,tgl.defaults.colors16["lime"])
+  obj.charCol2=tgl.Color2:new(obj.col2[2],obj.col2[1])
   obj.erase=true
   obj.stopOnClickOutside=false
+  obj.stopEventName=nil
+  obj.maxLen=-1
+  obj.scrollX=false
+  obj._viewX=0
   obj.handler=function (_,_,x,y)
     local textLen=unicode.wlen(obj.text)
     if textLen==0 then textLen=unicode.wlen(obj.defaultText) end
     if x>=obj.pos2.x and x<obj.pos2.x+textLen and y==obj.pos2.y
     and tgl.util.pointInSize2(x,y,tgl.sys.activeArea) then
       if obj.checkRendered then
-        if tgl.sys.renderer:getZ(obj.pos2.x,obj.pos2.y)>obj.z_index then return end
+        if tgl.sys.renderer:getZ(x,y)>obj.z_index then return end
       end
       obj:disable()
       obj:input()
@@ -288,71 +314,127 @@ end
 ---InputField input function
 function tgl.InputField:input()
   local r=tgl.sys.renderer
+  local displayW=unicode.wlen(self.defaultText)
   local printChar=tgl.Text:new(" ",self.charCol2)
   local _prevAA=tgl.sys.getActiveArea()
-  tgl.sys.setActiveArea(tgl.Size2:newFromPos2(self.pos2,tgl.Pos2:new(self.pos2.x+unicode.wlen(self.text),self.pos2.y)))
-  local offsetX=0
+  tgl.sys.setActiveArea(tgl.Size2:newFromSize(self.pos2.x,self.pos2.y,displayW,1))
+  local curCharIdx=0  -- 0-based: cursor is after this many chars
+  local curWidth=0    -- terminal-width from text start to cursor
+  local viewX=0       -- terminal-width scrolled off the left
   if self.erase then
-    if self.text=="" then r:fill(tgl.Size2:new(self.pos2.x,self.pos2.y,unicode.wlen(self.defaultText)+1,1)," ",self.col2,self.z_index)
-    else r:fill(tgl.Size2:new(self.pos2.x,self.pos2.y,unicode.wlen(self.text)+1,1)," ",self.col2,self.z_index) end
+    r:fill(tgl.Size2:newFromSize(self.pos2.x,self.pos2.y,displayW+1,1)," ",self.col2,self.z_index)
     self.text=""
   else
-    if self.text=="" then r:fill(tgl.Size2:new(self.pos2.x,self.pos2.y,unicode.wlen(self.defaultText)+1,1)," ",self.col2,self.z_index) offsetX=0
-    else offsetX=unicode.wlen(self.text) end
+    if self.text=="" then
+      r:fill(tgl.Size2:newFromSize(self.pos2.x,self.pos2.y,displayW+1,1)," ",self.col2,self.z_index)
+    else
+      curCharIdx=unicode.len(self.text)
+      curWidth=unicode.wlen(self.text)
+      if self.scrollX then viewX=math.max(0,curWidth-displayW) end
+    end
   end
-  ---@private
+  local function renderVisible()
+    r:fill(tgl.Size2:newFromSize(self.pos2.x,self.pos2.y,displayW,1)," ",self.col2,self.z_index)
+    if self.text~="" then
+      local disp
+      if self.secret then
+        disp=string.rep("*",math.min(unicode.len(self.text),displayW))
+      elseif self.scrollX then
+        disp=_iFWidthSub(self.text,viewX,displayW)
+      else
+        disp=self.text
+      end
+      if disp and disp~="" then r:set(self.pos2,disp,self.col2,self.z_index) end
+    end
+  end
   local function printChr()
-    printChar.pos2=tgl.Pos2:new(self.pos2.x+offsetX,self.pos2.y)
+    local ch=curCharIdx<unicode.len(self.text) and unicode.sub(self.text,curCharIdx+1,curCharIdx+1) or " "
+    printChar.text=self.secret and " " or ch
+    printChar.pos2=tgl.Pos2:new(self.pos2.x+(curWidth-viewX),self.pos2.y)
     printChar.z_index=self.z_index
     printChar:render()
   end
+  renderVisible()
   printChr()
   local _pull={"interrupted","key_down"}
   if self.stopOnClickOutside then table.insert(_pull,"touch") end
+  if self.stopEventName then table.insert(_pull,self.stopEventName) end
   while true do
     local id,_,a,b=event.pullMultiple(table.unpack(_pull))
-    if id=="touch" then
-      if not (a>=self.pos2.x and a<self.pos2.x+unicode.wlen(self.defaultText) and b==self.pos2.y) then
-        break
-      end
+    if self.stopEventName and id==self.stopEventName then
+      event.push(self.stopEventName)
+      break
+    elseif id=="touch" then
+      if not(a>=self.pos2.x and a<self.pos2.x+displayW and b==self.pos2.y) then break end
     else
-      local key=a
-      if offsetX<0 then offsetX=0 tgl.util.log("Input going offbounds","InputField/input") end
+      local key=a    -- char code
+      local kcode=b  -- scan code
+      if curWidth<0 then curWidth=0 end
       if key==tgl.defaults.keys.enter or key==tgl.defaults.keys.esc or id=="interrupted" then
         break
-      elseif (key==tgl.defaults.keys.backspace or key==tgl.defaults.keys.delete) and unicode.wlen(self.text)>0 then
-        local textLen=unicode.wlen(self.text)
-        r:fill(tgl.Size2:new(self.pos2.x,self.pos2.y,textLen+1,1)," ",self.col2,self.z_index)
-        offsetX=offsetX-unicode.charWidth(unicode.sub(self.text,textLen))
-        self.text=unicode.sub(self.text,1,textLen-1)
-        if textLen-1>0 then self:render()
-        else r:fill(tgl.Size2:new(self.pos2.x,self.pos2.y,unicode.wlen(self.text)+1,1)," ",self.col2,self.z_index) end
-        printChr()
+      elseif kcode==tgl.defaults.keys2.arrow_left then
+        if curCharIdx>0 then
+          local ch=unicode.sub(self.text,curCharIdx,curCharIdx)
+          curWidth=curWidth-unicode.charWidth(ch)
+          curCharIdx=curCharIdx-1
+          if self.scrollX and curWidth<viewX then viewX=curWidth end
+          renderVisible() printChr()
+        end
+      elseif kcode==tgl.defaults.keys2.arrow_right then
+        if curCharIdx<unicode.len(self.text) then
+          curCharIdx=curCharIdx+1
+          local ch=unicode.sub(self.text,curCharIdx,curCharIdx)
+          curWidth=curWidth+unicode.charWidth(ch)
+          if self.scrollX and (curWidth-viewX)>=displayW then viewX=curWidth-displayW+1 end
+          renderVisible() printChr()
+        end
+      elseif key==tgl.defaults.keys.backspace and curCharIdx>0 then
+        local ch=unicode.sub(self.text,curCharIdx,curCharIdx)
+        local chW=unicode.charWidth(ch)
+        self.text=unicode.sub(self.text,1,curCharIdx-1)..unicode.sub(self.text,curCharIdx+1)
+        curCharIdx=curCharIdx-1
+        curWidth=curWidth-chW
+        if self.scrollX and curWidth<viewX then viewX=math.max(0,curWidth) end
+        renderVisible() printChr()
+      elseif key==tgl.defaults.keys.delete and curCharIdx<unicode.len(self.text) then
+        self.text=unicode.sub(self.text,1,curCharIdx)..unicode.sub(self.text,curCharIdx+2)
+        renderVisible() printChr()
       elseif key>=32 and key~=tgl.defaults.keys.delete then
-        if unicode.wlen(self.text)+unicode.charWidth(key)<=unicode.wlen(self.defaultText) then
-          self.text=self.text..unicode.char(key)
-          self:render()
-          offsetX=offsetX+unicode.charWidth(unicode.char(key))
-          printChr()
+        local ch=unicode.char(key)
+        local chW=unicode.charWidth(ch)
+        local fits=(self.maxLen<0 or unicode.len(self.text)<self.maxLen)
+          and (self.scrollX or unicode.wlen(self.text)+chW<=displayW)
+        if fits then
+          self.text=unicode.sub(self.text,1,curCharIdx)..ch..unicode.sub(self.text,curCharIdx+1)
+          curCharIdx=curCharIdx+1
+          curWidth=curWidth+chW
+          if self.scrollX and (curWidth-viewX)>=displayW then viewX=curWidth-displayW+1 end
+          renderVisible() printChr()
         end
       end
     end
   end
+  self._viewX=viewX
   printChar.col2=self.col2
   printChr()
-  self:render()
+  renderVisible()
   if _prevAA then tgl.sys.setActiveArea(_prevAA) else tgl.sys.resetActiveArea() end
 end
 function tgl.InputField:render()
   if self.hidden then return false end
   local r=tgl.sys.renderer
-  if self.text=="" then r:set(self.pos2,self.defaultText,self.col2,self.z_index)
+  local displayW=unicode.wlen(self.defaultText)
+  if self.text=="" then
+    r:set(self.pos2,self.defaultText,self.col2,self.z_index)
+  elseif self.secret then
+    local cnt=self.scrollX and math.min(unicode.wlen(self.text),displayW) or unicode.wlen(self.text)
+    r:set(self.pos2,string.rep("*",cnt),self.col2,self.z_index)
+  elseif self.scrollX then
+    r:fill(tgl.Size2:newFromSize(self.pos2.x,self.pos2.y,displayW,1)," ",self.col2,self.z_index)
+    local disp=_iFWidthSub(self.text,self._viewX or 0,displayW)
+    if disp~="" then r:set(self.pos2,disp,self.col2,self.z_index) end
   else
-    if not self.secret then
-      r:set(self.pos2,self.text,self.col2,self.z_index)
-    else
-      r:set(self.pos2,string.rep("*",unicode.wlen(self.text)),self.col2,self.z_index)
-    end
+    r:set(self.pos2,self.text,self.col2,self.z_index)
   end
 end
 function tgl.InputField:enable()
@@ -395,20 +477,26 @@ function tgl.Scrollbar:new(size2,col2)
   obj.onChange=nil
   obj.enabled=false
   obj.scrollHandler=function(_,_,x,y,dir)
+    if obj.hidden or not obj.enabled then return end
     dir=dir*obj.scrollSpeed
     if obj.maxScroll<=0 then return end
     if not tgl.util.pointInSize2(x,y,obj.hitArea) then return end
+    if not tgl.util.pointInSize2(x,y,tgl.sys.activeArea) then return end
+    if tgl.sys.renderer:getZ(x,y)>obj.z_index then return end
     obj:setScroll(obj.scroll-dir)
   end
   obj.touchHandler=function(_,_,x,y)
+    if obj.hidden or not obj.enabled then return end
     if obj.maxScroll<=0 then return end
     if not (x==obj.size2.x1 and y>=obj.size2.y1 and y<=obj.size2.y2) then return end
+    if not tgl.util.pointInSize2(x,y,tgl.sys.activeArea) then return end
+    if tgl.sys.renderer:getZ(x,y)>obj.z_index then return end
     local startY=y
     local startScroll=obj.scroll
     local trackH=obj.size2.sizeY
     while true do
       local id,_,_,dy=event.pullMultiple("drag","drop")
-      if id=="drop" then break end
+      if id=="drop" or obj.hidden or not obj.enabled then break end
       obj:setScroll(startScroll+math.floor((dy-startY)*obj.maxScroll/trackH))
     end
   end
@@ -416,12 +504,17 @@ function tgl.Scrollbar:new(size2,col2)
 end
 ---@param n integer
 function tgl.Scrollbar:setScroll(n)
-  self.scroll=math.max(0,math.min(self.maxScroll,n))
-  if type(self.onChange)=="function" then self.onChange(self.scroll) end
+  n=math.max(0,math.min(self.maxScroll,n))
+  if n==self.scroll then return end
+  self.scroll=n
   local r=tgl.sys.renderer
   r:stop()
-  self:render()
-  r:flush()
+  local ok,err=pcall(function()
+    if type(self.onChange)=="function" then self.onChange(self.scroll) end
+    self:render()
+  end)
+  r:flush(true)
+  if not ok then error(err,0) end
 end
 function tgl.Scrollbar:render()
   if self.hidden then return end
@@ -995,6 +1088,8 @@ function tgl.InputBox:input(startX,startY)
         end
       elseif self.stopOnClickOutside then
         break
+      else
+        goto continue  -- touch outside, nothing changed: skip render
       end
     else  --key_down
       local key,key2=a1,a2
@@ -1047,6 +1142,7 @@ function tgl.InputBox:input(startX,startY)
     updateScrollbar()
     ensureVisible()
     renderEdit()
+    ::continue::
   end
 
   if self._scrollbar then
@@ -1055,9 +1151,11 @@ function tgl.InputBox:input(startX,startY)
   end
   self._inputActive=nil
   self.text=table.concat(lines,"\n")
-  r:stop()
-  self:render()  --preserves self.viewY, re-arms onChange for non-edit scrolling
-  r:flush()
+  if not (self._parentFrame and self._parentFrame.hidden) then
+    r:stop()
+    self:render()  --preserves self.viewY, re-arms onChange for non-edit scrolling
+    r:flush()
+  end
 end
 
 ---2D Box frame
@@ -1216,6 +1314,7 @@ end
 ---@return boolean
 function tgl.Frame:add(object,name)
   if object.type then
+    object._parentFrame=self
     if not name then
       table.insert(self.objects,object)
     else
@@ -1498,9 +1597,18 @@ function tgl.ScrollFrame:render()
     or self.size2
   r:fill(contentSize2," ",self.col2,self.z_index)
   local prevClip=r:getClipRegion()
-  r:setClipRegion(contentSize2)
+  local contentClip=contentSize2
+  if prevClip then
+    -- Keep the desktop damage clip when rendering nested scroll frames.
+    contentClip={type="Size2",x1=math.max(contentSize2.x1,prevClip.x1),
+      y1=math.max(contentSize2.y1,prevClip.y1),x2=math.min(contentSize2.x2,prevClip.x2),
+      y2=math.min(contentSize2.y2,prevClip.y2)}
+  end
+  r:setClipRegion(contentClip)
   for _,object in pairs(self.objects) do
     if object.type then
+      if not object.relativeZ then object.relativeZ=object.z_index end
+      object.z_index=self.z_index+object.relativeZ
       if object.relpos2 then
         if object.relpos2.y>self.scroll and object.relpos2.y<=self.size2.sizeY+self.scroll then
           object.pos2=tgl.Pos2:new(object.relpos2.x+self.size2.x1-1,object.relpos2.y+self.size2.y1-self.scroll-1)

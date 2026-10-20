@@ -1,10 +1,10 @@
 local term=require("term")
 return function(tgl)
-tgl.debug=true
+tgl.debug=false
 tgl.logfile="" --file to log
 tgl.sys={}
 ---Classes with `:enable()` and `:disable()` methods
-tgl.sys.enableTypes={Button=true,EventButton=true,InputField=true,InputBox=true,TextBox=true,ScrollFrame=true}
+tgl.sys.enableTypes={Button=true,EventButton=true,InputField=true,InputBox=true,TextBox=true,ScrollFrame=true,Scrollbar=true}
 ---Classes with `:enableAll()` and `:disableAll()` methods 
 tgl.sys.enableAllTypes={Frame=true,Bar=true,ScrollFrame=true}
 ---Classes with `:open()` and `:close()` methods

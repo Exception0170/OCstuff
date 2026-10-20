@@ -67,7 +67,8 @@ end
 function tgl.Renderer:stop() self.stopped=true end
 function tgl.Renderer:resume() self.stopped=false end
 ---Resume and immediately execute any queued commands.
-function tgl.Renderer:flush()
+function tgl.Renderer:flush(buffered)
+  if buffered then self._buffered=true end
   self.stopped=false
   if self.dirty and not self.rendering then
     self:render()
@@ -83,6 +84,7 @@ function tgl.Renderer:finish()
   self.nextQueue={}
   self.dirty=false
   self.gpu.freeAllBuffers()
+  self.activeBuffer=0
   return ok
 end
 function tgl.Renderer:addCmd(cmd)
@@ -108,39 +110,67 @@ end
 function tgl.Renderer:execCmd(cmd)
   if not cmd then return false end
   if not cmd.cmd then return false end
-  if cmd.buffer then
-    if cmd.buffer~=self.activeBuffer then
-      if not self.gpu.buffers()[cmd.buffer] and cmd.buffer~=0 then
+  local buffer=cmd.buffer
+  if buffer==0 and self._drawBuffer then buffer=self._drawBuffer end
+  if buffer then
+    if buffer~=self.activeBuffer then
+      if not self:hasBuffer(buffer) then
         tgl.util.log("Trying to write on non-allocated buffer! ("..cmd.buffer..")","Renderer")
         return false
       else
-        self.activeBuffer=cmd.buffer
-        self.gpu.setActiveBuffer(cmd.buffer)
+        self.activeBuffer=buffer
+        self.gpu.setActiveBuffer(buffer)
       end
     end
   end
   if cmd.col2 then tgl.changeToColor2(cmd.col2,true) end
   if cmd.cmd=="set" then
-    if cmd.clipRegion then
-      if not tgl.util.pos2InSize2(cmd.pos2,cmd.clipRegion) then
-        return true
-      end
-    end
+    local x,y=cmd.pos2.x,cmd.pos2.y
+    local value=cmd.value
+    local clip=cmd.clipRegion
     if not cmd.vertical then
-      if cmd.buffer==0 then
-        local z=cmd.z_index or 0
-        local len=unicode.wlen(cmd.value)
-        for i=0,len-1 do self._zbuf[(cmd.pos2.y-1)*self._sw+cmd.pos2.x+i]=z end
+      if clip then
+        if y<clip.y1 or y>clip.y2 then return true end
+        local chars={}
+        local startX=math.max(x,clip.x1)
+        for i=1,unicode.len(value) do
+          local char=unicode.sub(value,i,i)
+          local width=unicode.wlen(char)
+          if x>clip.x2 then break end
+          if x>=clip.x1 and x+width-1<=clip.x2 then
+            table.insert(chars,char)
+          elseif x+width-1>=clip.x1 then
+            -- A wide character crossing the edge leaves blank cells.
+            table.insert(chars,string.rep(" ",math.min(x+width-1,clip.x2)-math.max(x,clip.x1)+1))
+          end
+          x=x+width
+        end
+        x=startX
+        value=table.concat(chars)
       end
-      return self.gpu.set(cmd.pos2.x,cmd.pos2.y,cmd.value)
+      if value=="" then return true end
+      local ok=self.gpu.set(x,y,value)
+      if ok and cmd.buffer==0 then
+        local z=cmd.z_index or 0
+        local len=unicode.wlen(value)
+        for i=0,len-1 do
+          if x+i>=1 and x+i<=self._sw then self._zbuf[(y-1)*self._sw+x+i]=z end
+        end
+      end
+      return ok
     end
-    --vertical
-    local len=unicode.wlen(cmd.value)
-    for i=1,len do
-      local y=cmd.pos2.y+i-1
-      if not cmd.clipRegion or tgl.util.pointInSize2(cmd.pos2.x,y,cmd.clipRegion) then
-        self.gpu.set(cmd.pos2.x,y,unicode.sub(cmd.value,i,i))
-        if cmd.buffer==0 then self._zbuf[(y-1)*self._sw+cmd.pos2.x]=cmd.z_index or 0 end
+    --vertical: one character per row, including wide characters
+    for i=1,unicode.len(value) do
+      local cy=y+i-1
+      local char=unicode.sub(value,i,i)
+      local width=unicode.wlen(char)
+      if not clip or (cy>=clip.y1 and cy<=clip.y2 and x>=clip.x1 and x+width-1<=clip.x2) then
+        local ok=self.gpu.set(x,cy,char)
+        if ok and cmd.buffer==0 then
+          for dx=0,width-1 do
+            if x+dx>=1 and x+dx<=self._sw then self._zbuf[(cy-1)*self._sw+x+dx]=cmd.z_index or 0 end
+          end
+        end
       end
     end
     return true
@@ -167,19 +197,26 @@ function tgl.Renderer:execCmd(cmd)
   elseif cmd.cmd=="copy" then
     return self.gpu.copy(cmd.src.x1,cmd.src.y1,cmd.src.sizeX,cmd.src.sizeY,cmd.dst.x,cmd.dst.y)
   elseif cmd.cmd=="bufcopy" then
-    return self.gpu.bitblt(cmd.dst,cmd.size2.x1,cmd.size2.y1,cmd.size2.sizeX,cmd.size2.sizeY,cmd.src,cmd.bufpos2.x,cmd.bufpos2.y)
+    local dst=cmd.dst==0 and self._drawBuffer or cmd.dst
+    local src=cmd.src==0 and self._drawBuffer or cmd.src
+    return self.gpu.bitblt(dst,cmd.size2.x1,cmd.size2.y1,cmd.size2.sizeX,cmd.size2.sizeY,src,cmd.bufpos2.x,cmd.bufpos2.y)
   elseif cmd.cmd=="reset" then
     tgl.changeToColor2(cmd.col2)
     self.gpu.setActiveBuffer(0)
+    self.activeBuffer=0
     return true
   elseif cmd.cmd=="freebuffer" then
-    return self.gpu.freeBuffer(cmd.id)
+    local ok=self.gpu.freeBuffer(cmd.id)
+    self.activeBuffer=self.gpu.getActiveBuffer()
+    return ok
   elseif cmd.cmd=="setbuffer" then
     self.gpu.setActiveBuffer(cmd.id)
     self.activeBuffer=cmd.id
     return true
   elseif cmd.cmd=="freebuffers" then
-    self.gpu.freeAllBuffers() return true
+    self.gpu.freeAllBuffers()
+    self.activeBuffer=0
+    return true
   else
     tgl.util.log("Unknown cmd: "..require("serialization").serialize(cmd),"Renderer")
   end
@@ -204,7 +241,24 @@ function tgl.Renderer:render()
   self.rendering=true
   self:sortQueue()
   local prev_pos2,prev_col2=tgl.getCursorState()
+  local buffered=self._buffered
+  self._buffered=nil
+  -- A single temporary screen-sized buffer also preserves queued widget updates.
+  for _,cmd in ipairs(self.queue) do
+    if cmd.cmd=="freebuffers" then buffered=false end
+  end
+  if buffered then
+    local sw,sh=self.gpu.getResolution()
+    local ok,buf=pcall(function()
+      if self.gpu.freeMemory()<sw*sh then return nil end
+      return self.gpu.allocateBuffer(sw,sh)
+    end)
+    if ok and type(buf)=="number" and buf>0 then
+      self._drawBuffer=buf
+    end
+  end
   local success, err=pcall(function()
+    if self._drawBuffer then self.gpu.bitblt(self._drawBuffer,1,1,self._sw,tgl.defaults.screenSizeY,0,1,1) end
     for i=1,#self.queue do
       if not self:execCmd(self.queue[i]) then
         tgl.util.log("Failed executing: "..require("serialization").serialize(self.queue[i]),"Renderer")
@@ -214,11 +268,21 @@ function tgl.Renderer:render()
   if not success then
     tgl.util.log("ERROR rendering frame: "..err,"Renderer")
   end
+  if self._drawBuffer then
+    local buf=self._drawBuffer
+    self._drawBuffer=nil
+    local ok,copyErr=pcall(function()
+      if success then self.gpu.bitblt(0,1,1,self._sw,tgl.defaults.screenSizeY,buf,1,1) end
+    end)
+    self.gpu.freeBuffer(buf)
+    self.activeBuffer=self.gpu.getActiveBuffer()
+    if not ok then tgl.util.log("ERROR presenting frame: "..tostring(copyErr),"Renderer") end
+  end
   self.gpu.setActiveBuffer(self.activeBuffer)
   tgl.setCursorState(prev_pos2,prev_col2,true)
-  self.frameCounter=0
   self.queue={}
-  self.dirty=false
+  self.dirty=#self.nextQueue>0
+  if not self.dirty then self.frameCounter=0 end
   self.rendering=false
   event.push("renderDone")
 end
@@ -320,7 +384,7 @@ function tgl.Renderer:get(pos2,buf)
     return nil,nil
   end
   if buf then
-    if not self.gpu.buffers()[buf] then
+    if not self:hasBuffer(buf) then
       tgl.util.log("Getting from nil buffer: "..buf,"Renderer")
       return nil,nil
     end
@@ -346,7 +410,7 @@ function tgl.Renderer:getPoint(x,y,buf)
     return nil,nil
   end
   if buf then
-    if not self.gpu.buffers()[buf] then
+    if not self:hasBuffer(buf) then
       tgl.util.log("Getting from nil buffer: "..buf,"Renderer")
       return nil,nil
     end
@@ -382,7 +446,7 @@ end
 ---@param id integer
 ---@return boolean
 function tgl.Renderer:freeBuffer(id)
-  if id>0 and self:buffers()[id] then
+  if id>0 and self:hasBuffer(id) then
     self:addCmd({cmd="freebuffer",id=id})
     return true
   end
@@ -390,11 +454,20 @@ function tgl.Renderer:freeBuffer(id)
 end
 
 function tgl.Renderer:setBuffer(id)
-  if id>=0 and self:buffers()[id] then
+  if id>=0 and self:hasBuffer(id) then
     self:addCmd({cmd="setbuffer",id=id})
     return true
   end
   tgl.util.log("Trying to set unvalid buffer: "..tostring(id),"Renderer")
+  return false
+end
+
+---Buffer indexes are values in gpu.buffers(), not table keys.
+function tgl.Renderer:hasBuffer(id)
+  if id==0 then return true end
+  for _,buf in ipairs(self.gpu.buffers()) do
+    if buf==id then return true end
+  end
   return false
 end
 
