@@ -1,4 +1,8 @@
 # OCstuff
+
+![LTDEv1 Release Screenshot](misc/ltdev1-preview.png)
+Pictured: LTDEv1 release
+## Overview
 My projects, libs and stuff for OpenComputers mod.\
 Currently maintained: TGLv9, LTDEv1\
 Coming soon(probably): TGLv10, LTDEv2\
