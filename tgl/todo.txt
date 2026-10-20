@@ -1,13 +1,15 @@
-update zirnox
-tgl-img: render part of image
+update zirnox (or remake as LTDEv1 app)
+[x] tgl-img 1.6: partial image rendering and clipped buffer copies
 Radiobuttons
 
 for tglv10
 make custom tgl.event? to track listeners and on exit, shut them down too?
 make tgl-img part of base tgl, make tgl.ScreenSave use image.
+make most used objects from tgl-ui be part of tgl
 configurable default theme
 gradient support
 use checkArg in functions
+most used renderer functions as shortcuts? (tgl.sys.renderer:flush() -> tgl.flush())
 
 for ltde v2
 Explorer: RMB support and context menus

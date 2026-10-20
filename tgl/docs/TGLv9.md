@@ -245,7 +245,10 @@ local progress=ui.Progressbar:new(tgl.Pos2:new(3,3),20,
 progress:setValue(0.5,true)
 ```
 
-`require("tgl-img")` returns image support, version `1.5`, including the TMG
+`require("tgl-img")` returns image support, version `1.6`, including the TMG
 format, compression helpers and an Image class. Use `Image:load(path,pos?)` to
-obtain a new image object; it returns false if loading fails. `render()` queues
+obtain a new image object; it returns `false,error` if loading fails. `render()` queues
 its drawing. Keep image buffers in your resource cleanup.
+
+See [the tgl-img guide](TGL-IMG.md) for source rectangles, viewport clipping
+and reusable image buffers.

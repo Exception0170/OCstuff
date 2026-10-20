@@ -3,7 +3,7 @@
 local bit32=require("bit32")
 local tgl=require("tgl")
 local tmg={}
-tmg.ver="1.5"
+tmg.ver="1.6"
 tmg.enableCompressing=true --Enable compressing when saving?
 tmg.autoPreload=true --Automatically preload
 tmg.cache={} --TODO: add cache for frequent colors
@@ -382,55 +382,107 @@ function tmg.Image:new(size2,depth,name)
   return obj
 end
 
----Parse the rawdata string and generate Text[] objects.
----@return boolean success
-function tmg.Image:preload()
-  if not self then return false end
-  local r=tgl.sys.renderer
-  local success,buf=r:allocateBuffer(self.size2.sizeX,self.size2.sizeY)
-  if not success then
-    tgl.util.log("Image preload failure","Image/preload")
-    return false
-  end
-  local pos=1
-  local byteOffset=0
-  local maxpos=#self.rawdata
-  local x=self.size2.x1
-  local y=self.size2.y1
-  for iy=1,self.size2.sizeY do
-    for ix=1,self.size2.sizeX do
-      if pos>maxpos then
-        tgl.util.log("Out of bounds! rawdata is too short: ("..pos.."<"..maxpos..") saving data for debug","Image/preload")
-        break
-      end
-      local c
-      local char=tmg.char
-      if self.extended==true then
-        char=tmg.getExtendedChar(require("unicode").sub(self.rawdata,pos,pos))
-        pos=pos+1
-        byteOffset=byteOffset+string.len(char)-1
-      end
-      if self.depth==4 then
-        c=tmg.byteToCol2(self.rawdata:byte(pos+byteOffset))
-        pos=pos+1
-      else --8bit
-        c=tmg.bytesToCol2(self.rawdata:byte(pos+byteOffset),self.rawdata:byte(pos+1+byteOffset))
-        pos=pos+2
-      end
-      r:setPoint(ix,iy,char,c,self.z_index,false,buf)
+-- Extended images mix a character with binary color bytes in each cell.
+-- Decode characters by byte offset; Unicode indexing cannot skip color bytes.
+local function readCell(img,pos)
+  local raw=img.rawdata
+  local char=tmg.char
+  if img.extended then
+    local first=raw:byte(pos)
+    if not first then return nil,"Incomplete image data." end
+    local len=1
+    if first>=0xC2 and first<=0xDF then len=2
+    elseif first>=0xE0 and first<=0xEF then len=3
+    elseif first>=0xF0 and first<=0xF4 then len=4 end
+    for i=1,len-1 do
+      local byte=raw:byte(pos+i)
+      if not byte or byte<0x80 or byte>0xBF then return nil,"Invalid image character." end
     end
-    if iy%20==0 then os.sleep(0.05) end --memory overload saafeguard
+    char=tmg.getExtendedChar(raw:sub(pos,pos+len-1))
+    if char=="" then char=" " end
+    pos=pos+len
+  end
+  local bytes=img.depth==4 and 1 or 2
+  if pos+bytes-1>#raw then return nil,"Incomplete image data." end
+  local col=img.depth==4 and tmg.byteToCol2(raw:byte(pos))
+    or tmg.bytesToCol2(raw:byte(pos),raw:byte(pos+1))
+  return char,col,pos+bytes
+end
+
+local function imageRows(img)
+  local w,h=img.size2.sizeX,img.size2.sizeY
+  if (img.depth~=4 and img.depth~=8) or type(img.rawdata)~="string"
+  or w<1 or h<1 or w~=math.floor(w) or h~=math.floor(h) then return nil,"Invalid image dimensions or depth." end
+  local bytes=img.depth==4 and 1 or 2
+  if #img.rawdata<w*h*(bytes+(img.extended and 1 or 0)) then return nil,"Incomplete image data." end
+  if not img.extended then return true end
+  local cached=img._rows
+  if cached and cached.raw==img.rawdata and cached.width==w and cached.height==h and cached.depth==img.depth then
+    return cached
+  end
+  local rows={raw=img.rawdata,width=w,height=h,depth=img.depth}
+  local pos=1
+  for y=1,h do
+    rows[y]=pos
+    for x=1,w do
+      local char,col,nextPos=readCell(img,pos)
+      if not char then return nil,col end
+      pos=nextPos
+    end
+    if y%20==0 then os.sleep(0) end
+  end
+  img._rows=rows
+  return rows
+end
+
+local function rowStart(img,rows,y)
+  if img.extended then return rows[y] end
+  return ((y-1)*img.size2.sizeX)*(img.depth==4 and 1 or 2)+1
+end
+
+---Decode the image into a reusable GPU buffer.
+---@return boolean, string|nil
+function tmg.Image:preload()
+  local r=tgl.sys.renderer
+  if self.preloaded and r:hasBuffer(self.preload_buf) then return true end
+  local rows,err=imageRows(self)
+  if not rows then return false,err end
+  -- TGL positions are screen-width bounded; wider images use regional drawing.
+  if self.size2.sizeX>tgl.defaults.screenSizeX then return false,"Image is wider than the buffer drawing limit." end
+  local ok,success,buf=pcall(r.allocateBuffer,r,self.size2.sizeX,self.size2.sizeY)
+  if not ok or not success then return false,"Not enough GPU memory to preload image." end
+  local clip=r:getClipRegion()
+  r:setClipRegion(tgl.Size2:new(1,1,self.size2.sizeX,self.size2.sizeY))
+  local drawn,why=pcall(function()
+    for y=1,self.size2.sizeY do
+      local pos=rowStart(self,rows,y)
+      for x=1,self.size2.sizeX do
+        local char,col,nextPos=readCell(self,pos)
+        if not char then error(col,0) end
+        pos=nextPos
+        r:setPoint(x,y,char,col,self.z_index,false,buf)
+      end
+      if y%20==0 then os.sleep(0) end
+    end
+  end)
+  r:setClipRegion(clip)
+  r:addCmd({cmd="reset",col2=tgl.defaults.colors2.black,z_index=self.z_index})
+  if not drawn then
+    r:addCmd({cmd="freebuffer",id=buf,z_index=self.z_index})
+    return false,tostring(why)
   end
   self.preloaded=true
   self.preload_buf=buf
-  r:resetCursor()
   return true
 end
 
 function tmg.Image:unload()
   self.preloaded=false
-  if type(self.preload_buf)=="number" then
-    tgl.sys.renderer:freeBuffer(self.preload_buf)
+  if type(self.preload_buf)=="number" and self.preload_buf>0 then
+    local r=tgl.sys.renderer
+    if r:hasBuffer(self.preload_buf) then
+      r:addCmd({cmd="freebuffer",id=self.preload_buf,z_index=self.z_index})
+    end
   end
   self.preload_buf=0
   return true
@@ -462,109 +514,126 @@ function tmg.Image:convert()
   self.rawdata=res
   return true
 end
----Saves to .tmg file format
----@param filename string
----@return boolean
-function tmg.Image:save(filename)
-  if not self then return false end
-  if not filename then filename=self.name..".tmg" end
-  local file=io.open(filename,"w")
-  if not file then return false end
-  --compression
-  local compRLE=false
-  local compDiff=false
-  local rawdata=""
-  if tmg.enableCompressing then
-    rawdata,compRLE,compDiff=tmg.autoCompress(self.rawdata)
-  else rawdata=self.rawdata end
-  file:write("tmg\n")
-  file:write(tmg.collectFlags(self.depth,compRLE,compDiff,self.extended).."\n")
-  file:write(self.name.."\n")
-  file:write(tostring(self.size2.sizeX).."\n")
-  file:write(tostring(self.size2.sizeY).."\n")
-  --rawdata
-  file:write(rawdata)
-  return true
-end
----Loads from .tmg file format
----@param filename string
----@param pos2 tgl.Pos2? Position of image(defaults to 1,1)
----@return boolean|tmg.Image
-function tmg.Image:load(filename,pos2)
-  local file=io.open(filename)
-  if not file then return false end
-  if file:read("l")~="tmg" then return false end
-  local depth,compRLE,compDiff,extended=tmg.getFlags(file:read("l"))
-  local name=file:read("l")
-  local sizeX=tonumber(file:read("l"))
-  local sizeY=tonumber(file:read("l"))
-  if not sizeX or not sizeY then return false end
-  local size2
-  if not pos2 then
-    size2=tgl.Size2:newFromSize(1,1,sizeX,sizeY)
-  else
-    size2=tgl.Size2:newFromSize(pos2.x,pos2.y,sizeX,sizeY)
-  end
-  local img=tmg.Image:new(size2,depth,name)
-  img.extended=extended
-  img.rawdata=tmg.decompress(file:read("*a"),compRLE,compDiff)
-  return img
+-- Close handles on success, parse errors and failed writes. OpenOS close may
+-- return nil without an error on success.
+local function withFile(filename,mode,callback)
+  local file,err=io.open(filename,mode)
+  if not file then return false,err end
+  local ok,result,reason=pcall(callback,file)
+  local closed,value,closeErr=pcall(function() return file:close() end)
+  if not ok then return false,tostring(result) end
+  if not closed or value==false or closeErr then return false,tostring(closeErr or value or "Close failed.") end
+  return result,reason
 end
 
-function tmg.Image:render()
-  if self.hidden then return end
+---Save a .tmg file. Returns false,error on failure.
+function tmg.Image:save(filename)
+  local rows,err=imageRows(self)
+  if not rows then return false,err end
+  if self.name:find("[\r\n]") then return false,"Image name must fit on one line." end
+  filename=filename or self.name..".tmg"
+  return withFile(filename,"wb",function(file)
+    local raw,compRLE,compDiff=self.rawdata,false,false
+    if tmg.enableCompressing then raw,compRLE,compDiff=tmg.autoCompress(raw) end
+    local data="tmg\n"..tmg.collectFlags(self.depth,compRLE,compDiff,self.extended).."\n"..
+      self.name.."\n"..self.size2.sizeX.."\n"..self.size2.sizeY.."\n"..raw
+    local written,why=file:write(data)
+    if not written then return false,why or "Write failed." end
+    if file.flush then
+      local flushed,flushErr=file:flush()
+      if flushed==false or flushErr then return false,flushErr or "Flush failed." end
+    end
+    return true
+  end)
+end
+
+---Load a new Image; returns false,error on failure.
+function tmg.Image:load(filename,pos2)
+  return withFile(filename,"rb",function(file)
+    if file:read("l")~="tmg" then return false,"Not a TMG image." end
+    -- Flags are a raw byte, which can itself be a newline.
+    local flags=file:read(1)
+    if not flags or flags:byte()>15 or file:read(1)~="\n" then return false,"Invalid TMG flags." end
+    local depth,compRLE,compDiff,extended=tmg.getFlags(flags)
+    local name=file:read("l")
+    local w,h=tonumber(file:read("l")),tonumber(file:read("l"))
+    if not name or not w or not h or w<1 or h<1 or w~=math.floor(w) or h~=math.floor(h)
+    or w==math.huge or h==math.huge then return false,"Invalid image dimensions." end
+    pos2=pos2 or tgl.Pos2:new(1,1)
+    local img=tmg.Image:new(tgl.Size2:new(pos2.x,pos2.y,w,h),depth,name)
+    img.extended=extended
+    img.rawdata=tmg.decompress(file:read("*a"),compRLE,compDiff)
+    local rows,why=imageRows(img)
+    if not rows then return false,why end
+    return img
+  end)
+end
+
+---Draw an image-cell source rectangle at a screen position, without resizing.
+---Source bounds are 1-based. The destination defaults to the image's position.
+---@param source tgl.Size2|nil nil means the full image
+---@param pos2 tgl.Pos2|nil destination of the requested source's top-left
+---@return boolean, string|nil
+function tmg.Image:renderRegion(source,pos2)
+  if self.hidden then return true end
   local r=tgl.sys.renderer
-  local preload_here=false
-  if not self.preloaded and tmg.autoPreload then
-    self:preload()
-    preload_here=true
+  source=source or {x1=1,y1=1,x2=self.size2.sizeX,y2=self.size2.sizeY}
+  pos2=pos2 or self.size2.pos1
+  local function coordinate(value)
+    return type(value)=="number" and value==math.floor(value) and math.abs(value)~=math.huge
   end
+  if type(source)~="table" or type(pos2)~="table"
+  or not coordinate(source.x1) or not coordinate(source.y1) or not coordinate(source.x2)
+  or not coordinate(source.y2) or not coordinate(pos2.x) or not coordinate(pos2.y) then
+    return false,"Region coordinates must be finite integers."
+  end
+  if source.x2<source.x1 or source.y2<source.y1 then return false,"Invalid image region." end
+  local sx,sy=math.max(1,source.x1),math.max(1,source.y1)
+  local ex,ey=math.min(self.size2.sizeX,source.x2),math.min(self.size2.sizeY,source.y2)
+  local dx,dy=pos2.x+sx-source.x1,pos2.y+sy-source.y1
+  local clip=r:getClipRegion()
+  local left,top=math.max(1,dx),math.max(1,dy)
+  local right,bottom=math.min(tgl.defaults.screenSizeX,dx+ex-sx),math.min(tgl.defaults.screenSizeY,dy+ey-sy)
+  if clip then
+    left,top=math.max(left,clip.x1),math.max(top,clip.y1)
+    right,bottom=math.min(right,clip.x2),math.min(bottom,clip.y2)
+  end
+  if left>right or top>bottom or sx>ex or sy>ey then return true end
+  sx,sy=sx+left-dx,sy+top-dy
+  ex,ey=sx+right-left,sy+bottom-top
+  local destination=tgl.Size2:newFromPoint(left,top,right,bottom)
+  local rows,err=imageRows(self)
+  if not rows then return false,err end
+  if self.preloaded and not r:hasBuffer(self.preload_buf) then self.preloaded=false self.preload_buf=0 end
+  local temporary=false
+  if not self.preloaded and tmg.autoPreload then temporary=self:preload() end
   if self.preloaded then
-    if type(self.preload_buf)=="number" then
-      if r:buffers()[self.preload_buf] then
-        local success=r:bufcopy(self.preload_buf,0,self.size2,self.z_index)
-        if preload_here then
-          self:unload()
-        end
-        return success
+    local copied=r:bufcopy(self.preload_buf,0,destination,self.z_index,tgl.Pos2:new(sx,sy))
+    if temporary then self:unload() end
+    return copied
+  end
+  r:setClipRegion(destination)
+  local ok,why=pcall(function()
+    for y=sy,ey do
+      local pos=rowStart(self,rows,y)
+      if not self.extended then pos=pos+(sx-1)*(self.depth==4 and 1 or 2) end
+      local first=self.extended and 1 or sx
+      for x=first,ex do
+        local char,col,nextPos=readCell(self,pos)
+        if not char then error(col,0) end
+        pos=nextPos
+        if x>=sx then r:setPoint(left+x-sx,top+y-sy,char,col,self.z_index) end
       end
     end
-    tgl.util.log("Couldn't use preloaded buffer!","Image/render")
-    self.preloaded=false
-    self.preload_buf=0
-  end
-  tgl.util.log("Rendering directly to screen(slow)","Image/render")
-  ---rawrender
-  if not self.rawdata then return false end
-  local pos=1
-  local byteOffset=0
-  local maxpos=#self.rawdata
-  local x=self.size2.x1
-  local y=self.size2.y1
-  for iy=1,self.size2.sizeY do
-    for ix=1,self.size2.sizeX do
-      if pos>maxpos then
-        tgl.util.log("Out of bounds! rawdata is too short("..pos.."<"..maxpos..")!","Image/render")
-        break
-      end
-      local c
-      local char=tmg.char
-      if self.extended==true then
-        char=tmg.getExtendedChar(require("unicode").sub(self.rawdata,pos,pos))
-        pos=pos+1
-        byteOffset=byteOffset+string.len(char)-1
-      end
-      if self.depth==4 then
-        c=tmg.byteToCol2(self.rawdata:byte(pos+byteOffset))
-        pos=pos+1
-      else --8bit
-        c=tmg.bytesToCol2(self.rawdata:byte(pos+byteOffset),self.rawdata:byte(pos+byteOffset+1))
-        pos=pos+2
-      end
-      r:setPoint(x+ix-1,y+iy-1,char,c,self.z_index)
-    end
-  end
+  end)
+  r:setClipRegion(clip)
+  if not ok then return false,tostring(why) end
   return true
+end
+
+---Draw the complete image at its stored position, respecting the renderer clip.
+function tmg.Image:render()
+  return self:renderRegion()
 end
 
 ---Saves screen area to .tmg Image
