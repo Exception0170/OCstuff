@@ -75,6 +75,11 @@ TGL debug logging and LTDE's manual crash shortcut are disabled in this release.
 Normal session logs and error reports are still available. `dbgev.app` is not
 included.
 
+## Optional apps
+
+There are some apps which I wrote, including `.tmg` image viewer and TPaint.\
+You can find them [here](misc-apps/README.md).
+
 ## Writing apps
 
 Version 1 apps run in system mode. Install apps you trust: this version does not

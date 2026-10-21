@@ -6,7 +6,7 @@ import hashlib
 
 base=Path(__file__).resolve().parents[1]
 repo=base.parent
-name="ltde-v1.0.2010"
+name="ltde-v1.0.2110"
 output=base/(name+".zip")
 files={}
 
@@ -27,7 +27,7 @@ for target,source in (("README.md","ABOUT.md"),("ABOUT.md","ABOUT.md"),("CHANGEL
 
 with ZipFile(output,"w",compression=ZIP_DEFLATED) as archive:
     for path,data in sorted(files.items()):
-        info=ZipInfo(name+"/"+path.as_posix(),date_time=(2026,10,20,0,0,0))
+        info=ZipInfo(name+"/"+path.as_posix(),date_time=(2026,10,21,0,0,0))
         info.compress_type=ZIP_DEFLATED
         info.external_attr=0o100644<<16
         archive.writestr(info,data)

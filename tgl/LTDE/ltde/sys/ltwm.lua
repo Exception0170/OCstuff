@@ -33,10 +33,6 @@ function ltwm.WindowManager:new()
   obj._dragThreads={}   -- tracked so cleanup() can kill any still-waiting ones
   obj._dragCursor="+"   -- overridden by core.lua from display.conf
 
-  obj.resetHandler=function(_,_,key1)
-    if key1==23 then obj:cleanup() tgl.util.clear() end
-  end
-
   obj.focusHandler=function(_,_,x,y)
     if obj.locked then return end
     local mwin=obj:getWindowAt(x,y)
@@ -96,7 +92,6 @@ function ltwm.WindowManager:new()
     end
   end
 
-  event.listen("key_down",obj.resetHandler)
   event.listen("touch",obj.focusHandler)
   tgl.sys.wm=obj
   tgl.util.log("LTWM initialized","LTWM")
@@ -375,7 +370,6 @@ function ltwm.WindowManager:cleanup()
   self.windows={}
   self.pidWindows={}
   self.activeWindow=nil
-  event.ignore("key_down",self.resetHandler)
   event.ignore("touch",self.focusHandler)
   for _,t in ipairs(self._dragThreads) do
     if t:status()~="dead" then t:kill() end

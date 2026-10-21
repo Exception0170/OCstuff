@@ -6,7 +6,7 @@ local thread=require("thread")
 local tgl=require("tgl")
 local fs=require("filesystem")
 
-_G._ltde_version="release build v1.0.2010"
+_G._ltde_version="release build v1.0.2110"
 
 ---Load a system file, BSOD on failure
 local function loadsys(path)
@@ -228,7 +228,8 @@ local function shutdown()
   _G.cfglib=nil
   _G._ltde_running_pid=nil
   _G._ltde_co_pid=nil
-  -- tgl-ui captures the TGL instance, including its renderer.
+  -- Graphics add-ons capture the TGL instance, including its renderer.
+  package.loaded["tgl-img"]=nil
   package.loaded["tgl-ui"]=nil
   package.loaded["tgl"]=nil
   slog.log("Done","core")

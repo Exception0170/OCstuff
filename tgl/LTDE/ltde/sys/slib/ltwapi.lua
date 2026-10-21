@@ -63,6 +63,8 @@ function ltwapi.showMenu(anchorPos2,items,col2,z)
   tgl.sys.setActiveArea(prevAA)
   frame:disableAll()
   ss:render()
+  --Restore the popup area before its action can resize or close the window.
+  r:flush()
   if not _ok then error(_err,0) end
   if result and result.eventName then
     event.push(result.eventName,result.value)

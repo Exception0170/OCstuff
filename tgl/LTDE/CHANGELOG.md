@@ -1,5 +1,15 @@
 # Changes
 
+## release build v1.0.2110
+
+- Notepad 1.1: Find, Find Next/Previous, case matching and search shortcuts.
+- Fixed Notepad marking unchanged text as modified and drawing over other windows.
+- Faster text scrolling and improved input handling.
+- Removed the leftover window-manager shortcut that cleared the desktop on Ctrl+W.
+- Fixed popup restoration leaving artifacts when an app resizes its window.
+- Release cached image-library state when exiting LTDE.
+- Includes TGL 0.9.6 and tgl-img 1.7, with improved image rendering and transparency.
+
 ## release build v1.0.2010
 
 First LTDE release for OpenOS, targeting Tier 2 graphics and at least 1 MB RAM.
