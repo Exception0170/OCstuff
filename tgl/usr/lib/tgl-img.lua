@@ -3,7 +3,7 @@
 local bit32=require("bit32")
 local tgl=require("tgl")
 local tmg={}
-tmg.ver="1.6"
+tmg.ver="1.7"
 tmg.enableCompressing=true --Enable compressing when saving?
 tmg.autoPreload=true --Automatically preload
 tmg.cache={} --TODO: add cache for frequent colors
@@ -12,15 +12,15 @@ tmg.cache={} --TODO: add cache for frequent colors
 tmg.char="▀"
 tmg.chars={}
 tmg.chars[0]=""
-tmg.chars[1]=tmg.char
+tmg.chars[3]=tmg.char
 tmg.chars[128]="█"
 tmg.chars[129]="▓"
 tmg.chars[130]="▒"
 tmg.chars[131]="▄"
 tmg.chars[132]="▖"
-tmg.chars[132]="▗"
-tmg.chars[132]="▘"
-tmg.chars[132]="▝"
+tmg.chars[133]="▗"
+tmg.chars[134]="▘"
+tmg.chars[135]="▝"
 
 ---Gets char in extended mode
 ---@param char string
@@ -44,13 +44,14 @@ end
 ---@param compRLE boolean
 ---@param compDiff boolean
 ---@param extended boolean
+---@param transparency? boolean
 ---@return string
-function tmg.collectFlags(depth,compRLE,compDiff,extended)
+function tmg.collectFlags(depth,compRLE,compDiff,extended,transparency)
   if depth==4 then depth=0 else depth=1 end
   if compRLE==true then compRLE=1 else compRLE=0 end
   if compDiff==true then compDiff=1 else compDiff=0 end
   if extended==true then extended=1 else extended=0 end
-  return string.char(depth*8+compRLE*4+compDiff*2+extended)
+  return string.char((transparency and 16 or 0)+depth*8+compRLE*4+compDiff*2+extended)
 end
 ---Gets flags from string byte
 ---@param f string
@@ -58,9 +59,10 @@ end
 ---@return boolean
 ---@return boolean
 ---@return boolean
+---@return boolean
 function tmg.getFlags(f)
   f=string.byte(f)
-  return f//8*4+4,f%8//4==1,f%4//2==1,f%2==1
+  return f%16//8*4+4,f%8//4==1,f%4//2==1,f%2==1,f&16~=0
 end
 --compression
 ---Run-Length Encoding
@@ -358,6 +360,8 @@ end
 ---@field pixelsize integer Number of pixels in image
 ---@field name string Image name
 ---@field rawdata string Image rawdata bytes in string form
+---@field mask string|nil Packed two-bit transparency mask, four cells per byte
+---@field autoPreload boolean|nil Set false to disable automatic preloading for this image
 ---@field preloaded boolean If image was preloaded into buffer
 ---@field preload_buf integer
 ---@field data tgl.Text[] Array of text objects
@@ -376,10 +380,50 @@ function tmg.Image:new(size2,depth,name)
   obj.extended=false
   obj.pixelsize=obj.size2.sizeX*obj.size2.sizeY*2
   obj.rawdata=""
+  obj.mask=nil
   obj.name=tostring(name) or "untitled"
   obj.preloaded=false
   obj.data={}
   return obj
+end
+
+local function maskAt(img,x,y)
+  if not img.mask then return 0 end
+  local i=(y-1)*img.size2.sizeX+x-1
+  return (img.mask:byte(i//4+1) >> ((i%4)*2)) & 3
+end
+
+local function maskPosition(img,x,y)
+  return type(x)=="number" and type(y)=="number" and x==math.floor(x) and y==math.floor(y)
+    and x>=1 and x<=img.size2.sizeX and y>=1 and y<=img.size2.sizeY
+end
+
+---Get cell transparency: 0 opaque, 1 upper clear, 2 lower clear, 3 both clear.
+function tmg.Image:getMask(x,y)
+  if not maskPosition(self,x,y) then return nil,"Invalid mask position." end
+  return maskAt(self,x,y)
+end
+
+---Set cell transparency, creating an opaque mask on the first transparent cell.
+function tmg.Image:setMask(x,y,value)
+  if not maskPosition(self,x,y) or type(value)~="number" or value~=math.floor(value)
+  or value<0 or value>3 then return false,"Invalid mask position or value." end
+  if not self.mask and value==0 then return true end
+  local count=self.size2.sizeX*self.size2.sizeY
+  local mask=self.mask or string.rep("\0",(count+3)//4)
+  local i=(y-1)*self.size2.sizeX+x-1
+  local pos,shift=i//4+1,(i%4)*2
+  local byte=(mask:byte(pos) & (255 ~ (3 << shift))) | (value << shift)
+  if self.preloaded then self:unload() end
+  self.mask=mask:sub(1,pos-1)..string.char(byte)..mask:sub(pos+1)
+  return true
+end
+
+local function halfColors(char,col)
+  if char=="▀" then return col[1],col[2]
+  elseif char=="▄" then return col[2],col[1]
+  elseif char=="█" then return col[1],col[1]
+  elseif char==" " then return col[2],col[2] end
 end
 
 -- Extended images mix a character with binary color bytes in each cell.
@@ -413,20 +457,29 @@ local function imageRows(img)
   local w,h=img.size2.sizeX,img.size2.sizeY
   if (img.depth~=4 and img.depth~=8) or type(img.rawdata)~="string"
   or w<1 or h<1 or w~=math.floor(w) or h~=math.floor(h) then return nil,"Invalid image dimensions or depth." end
+  if img.mask~=nil then
+    if type(img.mask)~="string" or #img.mask~=(w*h+3)//4 then return nil,"Invalid transparency mask length." end
+    local used=w*h%4
+    if used~=0 and img.mask:byte(-1) >> (used*2)~=0 then return nil,"Invalid transparency mask padding." end
+  end
   local bytes=img.depth==4 and 1 or 2
   if #img.rawdata<w*h*(bytes+(img.extended and 1 or 0)) then return nil,"Incomplete image data." end
   if not img.extended then return true end
   local cached=img._rows
-  if cached and cached.raw==img.rawdata and cached.width==w and cached.height==h and cached.depth==img.depth then
+  if cached and cached.raw==img.rawdata and cached.mask==img.mask and cached.width==w and cached.height==h and cached.depth==img.depth then
     return cached
   end
-  local rows={raw=img.rawdata,width=w,height=h,depth=img.depth}
+  local rows={raw=img.rawdata,mask=img.mask,width=w,height=h,depth=img.depth}
   local pos=1
   for y=1,h do
     rows[y]=pos
     for x=1,w do
       local char,col,nextPos=readCell(img,pos)
       if not char then return nil,col end
+      local mask=maskAt(img,x,y)
+      if (mask==1 or mask==2) and not halfColors(char,col) then
+        return nil,"Half-cell transparency requires block or space characters."
+      end
       pos=nextPos
     end
     if y%20==0 then os.sleep(0) end
@@ -440,9 +493,71 @@ local function rowStart(img,rows,y)
   return ((y-1)*img.size2.sizeX)*(img.depth==4 and 1 or 2)+1
 end
 
+-- Keep image pixels out of the command queue. Decode them only while the
+-- renderer executes this one command, reusing its position/command tables.
+local function drawImage(r,cmd)
+  local img=cmd.image
+  local point={x=0,y=0}
+  local cell={cmd="set",pos2=point,buffer=cmd.buffer,z_index=cmd.z_index,clipRegion=cmd.clipRegion}
+  for y=cmd.source.y1,cmd.source.y2 do
+    local pos=rowStart(img,cmd.rows,y)
+    if not img.extended then pos=pos+(cmd.source.x1-1)*(img.depth==4 and 1 or 2) end
+    local first=img.extended and 1 or cmd.source.x1
+    for x=first,cmd.source.x2 do
+      local char,col,nextPos=readCell(img,pos)
+      if not char then error(col,0) end
+      pos=nextPos
+      if x>=cmd.source.x1 then
+        point.x=cmd.destination.x+x-cmd.source.x1
+        point.y=cmd.destination.y+y-cmd.source.y1
+        local mask=maskAt(img,x,y)
+        if mask~=3 then
+          if mask~=0 then
+            local upper,lower=halfColors(char,col)
+            local oldChar,fg,bg=r.gpu.get(point.x,point.y)
+            local oldUpper,oldLower=halfColors(oldChar,{fg,bg})
+            if mask==1 then upper=oldUpper or bg else lower=oldLower or bg end
+            char,col=tmg.char,tgl.Color2:new(upper,lower)
+          end
+          cell.value,cell.col2=char,col
+          if not r:execCmd(cell) then return false end
+        end
+      end
+    end
+  end
+  return true
+end
+
+tgl.Renderer.cmd.tmg=drawImage
+
+local function queueImage(img,rows,source,destination,buffer)
+  local r=tgl.sys.renderer
+  local snapshot={rawdata=img.rawdata,mask=img.mask,depth=img.depth,extended=img.extended,
+    size2={sizeX=img.size2.sizeX,sizeY=img.size2.sizeY}}
+  local cmd={cmd="tmg",image=snapshot,rows=rows,source=source,destination=destination,
+    buffer=buffer or 0,z_index=img.z_index}
+  if r.customCommands then return r:addCmd(cmd) end
+  if img.mask then return false,"Transparency requires a renderer with custom command support." end
+  -- Compatibility with earlier v9 renderers; use the original queued path.
+  for y=source.y1,source.y2 do
+    local pos=rowStart(snapshot,rows,y)
+    if not snapshot.extended then pos=pos+(source.x1-1)*(snapshot.depth==4 and 1 or 2) end
+    for x=snapshot.extended and 1 or source.x1,source.x2 do
+      local char,col,nextPos=readCell(snapshot,pos)
+      if not char then return false,col end
+      pos=nextPos
+      if x>=source.x1 then
+        r:setPoint(destination.x+x-source.x1,destination.y+y-source.y1,char,col,img.z_index,false,buffer)
+      end
+    end
+  end
+  return true
+end
+
 ---Decode the image into a reusable GPU buffer.
 ---@return boolean, string|nil
 function tmg.Image:preload()
+  if self.mask then return false,"Transparent images must be drawn over their destination." end
   local r=tgl.sys.renderer
   if self.preloaded and r:hasBuffer(self.preload_buf) then return true end
   local rows,err=imageRows(self)
@@ -453,23 +568,13 @@ function tmg.Image:preload()
   if not ok or not success then return false,"Not enough GPU memory to preload image." end
   local clip=r:getClipRegion()
   r:setClipRegion(tgl.Size2:new(1,1,self.size2.sizeX,self.size2.sizeY))
-  local drawn,why=pcall(function()
-    for y=1,self.size2.sizeY do
-      local pos=rowStart(self,rows,y)
-      for x=1,self.size2.sizeX do
-        local char,col,nextPos=readCell(self,pos)
-        if not char then error(col,0) end
-        pos=nextPos
-        r:setPoint(x,y,char,col,self.z_index,false,buf)
-      end
-      if y%20==0 then os.sleep(0) end
-    end
-  end)
+  local drawn,result,why=pcall(queueImage,self,rows,
+    {x1=1,y1=1,x2=self.size2.sizeX,y2=self.size2.sizeY},tgl.Pos2:new(1,1),buf)
   r:setClipRegion(clip)
   r:addCmd({cmd="reset",col2=tgl.defaults.colors2.black,z_index=self.z_index})
-  if not drawn then
+  if not drawn or not result then
     r:addCmd({cmd="freebuffer",id=buf,z_index=self.z_index})
-    return false,tostring(why)
+    return false,tostring(drawn and why or result)
   end
   self.preloaded=true
   self.preload_buf=buf
@@ -535,8 +640,8 @@ function tmg.Image:save(filename)
   return withFile(filename,"wb",function(file)
     local raw,compRLE,compDiff=self.rawdata,false,false
     if tmg.enableCompressing then raw,compRLE,compDiff=tmg.autoCompress(raw) end
-    local data="tmg\n"..tmg.collectFlags(self.depth,compRLE,compDiff,self.extended).."\n"..
-      self.name.."\n"..self.size2.sizeX.."\n"..self.size2.sizeY.."\n"..raw
+    local data="tmg\n"..tmg.collectFlags(self.depth,compRLE,compDiff,self.extended,self.mask~=nil).."\n"..
+      self.name.."\n"..self.size2.sizeX.."\n"..self.size2.sizeY.."\n"..(self.mask or "")..raw
     local written,why=file:write(data)
     if not written then return false,why or "Write failed." end
     if file.flush then
@@ -553,8 +658,8 @@ function tmg.Image:load(filename,pos2)
     if file:read("l")~="tmg" then return false,"Not a TMG image." end
     -- Flags are a raw byte, which can itself be a newline.
     local flags=file:read(1)
-    if not flags or flags:byte()>15 or file:read(1)~="\n" then return false,"Invalid TMG flags." end
-    local depth,compRLE,compDiff,extended=tmg.getFlags(flags)
+    if not flags or flags:byte()>31 or file:read(1)~="\n" then return false,"Invalid TMG flags." end
+    local depth,compRLE,compDiff,extended,transparency=tmg.getFlags(flags)
     local name=file:read("l")
     local w,h=tonumber(file:read("l")),tonumber(file:read("l"))
     if not name or not w or not h or w<1 or h<1 or w~=math.floor(w) or h~=math.floor(h)
@@ -562,6 +667,11 @@ function tmg.Image:load(filename,pos2)
     pos2=pos2 or tgl.Pos2:new(1,1)
     local img=tmg.Image:new(tgl.Size2:new(pos2.x,pos2.y,w,h),depth,name)
     img.extended=extended
+    if transparency then
+      local count=(w*h+3)//4
+      img.mask=file:read(count)
+      if not img.mask or #img.mask~=count then return false,"Incomplete transparency mask." end
+    end
     img.rawdata=tmg.decompress(file:read("*a"),compRLE,compDiff)
     local rows,why=imageRows(img)
     if not rows then return false,why end
@@ -604,31 +714,20 @@ function tmg.Image:renderRegion(source,pos2)
   local destination=tgl.Size2:newFromPoint(left,top,right,bottom)
   local rows,err=imageRows(self)
   if not rows then return false,err end
+  if self.mask and self.preloaded then self:unload() end
   if self.preloaded and not r:hasBuffer(self.preload_buf) then self.preloaded=false self.preload_buf=0 end
   local temporary=false
-  if not self.preloaded and tmg.autoPreload then temporary=self:preload() end
+  if not self.mask and not self.preloaded and self.autoPreload~=false and tmg.autoPreload then temporary=self:preload() end
   if self.preloaded then
     local copied=r:bufcopy(self.preload_buf,0,destination,self.z_index,tgl.Pos2:new(sx,sy))
     if temporary then self:unload() end
     return copied
   end
   r:setClipRegion(destination)
-  local ok,why=pcall(function()
-    for y=sy,ey do
-      local pos=rowStart(self,rows,y)
-      if not self.extended then pos=pos+(sx-1)*(self.depth==4 and 1 or 2) end
-      local first=self.extended and 1 or sx
-      for x=first,ex do
-        local char,col,nextPos=readCell(self,pos)
-        if not char then error(col,0) end
-        pos=nextPos
-        if x>=sx then r:setPoint(left+x-sx,top+y-sy,char,col,self.z_index) end
-      end
-    end
-  end)
+  local ok,result,why=pcall(queueImage,self,rows,{x1=sx,y1=sy,x2=ex,y2=ey},tgl.Pos2:new(left,top))
   r:setClipRegion(clip)
-  if not ok then return false,tostring(why) end
-  return true
+  if not ok then return false,tostring(result) end
+  return result,why
 end
 
 ---Draw the complete image at its stored position, respecting the renderer clip.
@@ -668,11 +767,13 @@ tmg --file format
 <str> --name
 16 --sizeX(in chars)
 16 --sizeY(in chars)
+<bin> --optional uncompressed mask, ceil(sizeX*sizeY/4) bytes, no separator
 <bin> --rawdata
 upper=foreground
 lower=background
 
 tmg flags
+10000 transparency mask present
 1000 color depth (0=4bit 1=8bit)
 0100 compression (RLE)
 0010 compression (diff)
