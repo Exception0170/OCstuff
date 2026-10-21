@@ -1,6 +1,6 @@
 ---TGLv9 init file
 local tgl={}
-tgl.version="0.9.5"
+tgl.version="0.9.6"
 tgl=dofile("/usr/lib/tgl/core.lua")(tgl)
 tgl=dofile("/usr/lib/tgl/defaults.lua")(tgl)
 tgl=dofile("/usr/lib/tgl/renderer.lua")(tgl)

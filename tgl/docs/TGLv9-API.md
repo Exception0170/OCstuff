@@ -86,6 +86,7 @@ is `.defaultText`; its display width defines the editing viewport.
 | `maxLen` | -1 | Maximum character count; negative means unlimited |
 | `scrollX` | false | Scroll horizontally instead of stopping at viewport width |
 | `stopOnClickOutside` | false | End editing after an outside touch |
+| `restrictActiveArea` | true | Restrict interaction to the field while editing; false keeps the parent's area for modal buttons |
 | `stopEventName` | nil | Additional event that ends editing |
 | `charCol2` | Inverted colors | Editing cursor colors |
 
@@ -127,11 +128,19 @@ The click handler emits `eventName,text` when editing finishes.
 | `showScroll` | true | Show overflow scrollbar |
 | `viewY` | 0 | Current vertical offset |
 | `cursorCol2` | Inverted colors | Editing cursor colors |
+| `onKeyDown` | nil | Optional `(character,scanCode)` callback; return true to finish editing |
 
 Use distinct stop/completion event names for each instance. `disable()` requests
 that an active edit end and leaves the control disabled. `input()` stores the
 edited text when its loop exits. It has its own input loop, rather than an
 application-wide keyboard dispatcher.
+
+`showPosition(line,column,length?)` reveals a logical line and character column,
+both one-based. A positive length highlights that many characters, including
+across wrapped rows. The highlight uses `cursorCol2` and clears when editing
+starts. Idle rendering reuses the parsed layout until its text or layout
+settings change. In an LTDE-managed Frame, ending editing redraws through the
+window manager so higher windows remain visible.
 
 ## Scrollbar
 

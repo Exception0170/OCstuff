@@ -79,6 +79,12 @@ the current display into that buffer, applies queued screen drawing there, then
 copies the completed result back to the screen. Existing pixels outside the
 changed area survive. The temporary buffer is freed after presentation.
 
+For text/fill batches, only the bounding area of the queued drawing or clips is
+copied into and out of the buffer. Screen copies and custom commands retain
+full-screen copies so their source pixels remain available. Scrollbar callbacks
+and the scrollbar's own drawing are flushed together, even if the callback
+requests an intermediate flush.
+
 Allocation depends on available GPU buffer memory. If it cannot allocate, drawing
 falls back to screen writes. A batch that frees all buffers also disables the
 temporary-buffer path. Buffering does not choose which widgets need redrawing;
@@ -135,3 +141,14 @@ raise an error. Use `pcall` when an allocation failure must be recoverable.
 - [core.lua](../usr/lib/tgl/core.lua): value classes and shared state.
 - [defaults.lua](../usr/lib/tgl/defaults.lua): palette, dimensions and constants.
 - [util.lua](../usr/lib/tgl/util.lua): colors and screen-read helpers.
+
+## Image commands
+
+The current renderer dispatches registered command names through
+`tgl.Renderer.cmd`, calling the handler with `(renderer, command)` after
+selecting the command's buffer.
+`tgl-img` registers its `tmg` handler there. A queued image command holds the raw
+payload and source rectangle; the handler decodes cells during execution using
+reusable command/position tables. This keeps a large image from retaining
+thousands of per-cell tables in the drawing queue. Ordinary z ordering,
+buffer selection and text clipping still apply.

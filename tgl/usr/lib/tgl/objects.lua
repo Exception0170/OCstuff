@@ -317,7 +317,9 @@ function tgl.InputField:input()
   local displayW=unicode.wlen(self.defaultText)
   local printChar=tgl.Text:new(" ",self.charCol2)
   local _prevAA=tgl.sys.getActiveArea()
-  tgl.sys.setActiveArea(tgl.Size2:newFromSize(self.pos2.x,self.pos2.y,displayW,1))
+  if self.restrictActiveArea~=false then
+    tgl.sys.setActiveArea(tgl.Size2:newFromSize(self.pos2.x,self.pos2.y,displayW,1))
+  end
   local curCharIdx=0  -- 0-based: cursor is after this many chars
   local curWidth=0    -- terminal-width from text start to cursor
   local viewX=0       -- terminal-width scrolled off the left
@@ -370,7 +372,8 @@ function tgl.InputField:input()
       local key=a    -- char code
       local kcode=b  -- scan code
       if curWidth<0 then curWidth=0 end
-      if key==tgl.defaults.keys.enter or key==tgl.defaults.keys.esc or id=="interrupted" then
+      if key==tgl.defaults.keys.enter or key==tgl.defaults.keys.esc
+      or kcode==28 or kcode==156 or kcode==1 or id=="interrupted" then
         break
       elseif kcode==tgl.defaults.keys2.arrow_left then
         if curCharIdx>0 then
@@ -388,7 +391,7 @@ function tgl.InputField:input()
           if self.scrollX and (curWidth-viewX)>=displayW then viewX=curWidth-displayW+1 end
           renderVisible() printChr()
         end
-      elseif key==tgl.defaults.keys.backspace and curCharIdx>0 then
+      elseif (key==tgl.defaults.keys.backspace or kcode==14) and curCharIdx>0 then
         local ch=unicode.sub(self.text,curCharIdx,curCharIdx)
         local chW=unicode.charWidth(ch)
         self.text=unicode.sub(self.text,1,curCharIdx-1)..unicode.sub(self.text,curCharIdx+1)
@@ -396,7 +399,7 @@ function tgl.InputField:input()
         curWidth=curWidth-chW
         if self.scrollX and curWidth<viewX then viewX=math.max(0,curWidth) end
         renderVisible() printChr()
-      elseif key==tgl.defaults.keys.delete and curCharIdx<unicode.len(self.text) then
+      elseif (key==tgl.defaults.keys.delete or kcode==211) and curCharIdx<unicode.len(self.text) then
         self.text=unicode.sub(self.text,1,curCharIdx)..unicode.sub(self.text,curCharIdx+2)
         renderVisible() printChr()
       elseif key>=32 and key~=tgl.defaults.keys.delete then
@@ -509,10 +512,13 @@ function tgl.Scrollbar:setScroll(n)
   self.scroll=n
   local r=tgl.sys.renderer
   r:stop()
+  local deferred=r._deferFlush
+  r._deferFlush=true
   local ok,err=pcall(function()
     if type(self.onChange)=="function" then self.onChange(self.scroll) end
     self:render()
   end)
+  r._deferFlush=deferred
   r:flush(true)
   if not ok then error(err,0) end
 end
@@ -704,6 +710,96 @@ function tgl.InputBox:disable()
   event.ignore("touch",self.handler)
   if self._scrollbar then self._scrollbar:disable() end
 end
+-- Scrolling changes the viewport, not the document's line layout.
+local function inputBoxLayout(box)
+  local layout=box._layout
+  if layout and layout.text==box.text and layout.width==box.size2.sizeX and layout.height==box.size2.sizeY
+  and layout.tabSize==box.tabSize and layout.showScroll==box.showScroll
+  and layout.lineNumbers==box.lineNumbers and layout.wrap==box.wrap then return layout end
+  box._layout=nil
+  local lines={}
+  for line in (box.text.."\n"):gmatch("([^\n]*)\n") do lines[#lines+1]=line end
+  local lnw=box.lineNumbers and (#tostring(#lines)+1) or 0
+  local scrollActive=box.showScroll and #lines>box.size2.sizeY
+  local mw=math.max(1,box.size2.sizeX-lnw-(scrollActive and 1 or 0))
+  local vlines=nil
+  if box.wrap then
+    local tabRepl=string.rep(" ",box.tabSize)
+    local function build(width)
+      local vl={}
+      for li,line in ipairs(lines) do
+        local exp=line:gsub("\t",tabRepl)
+        local len=unicode.wlen(exp)
+        if len==0 then vl[#vl+1]={li=li,text="",startVC=0}
+        else
+          for pos=1,len,width do
+            vl[#vl+1]={li=li,text=unicode.sub(exp,pos,math.min(pos+width-1,len)),startVC=pos-1}
+          end
+        end
+      end
+      return vl
+    end
+    vlines=build(mw)
+    if box.showScroll and not scrollActive and #vlines>box.size2.sizeY then
+      scrollActive=true mw=math.max(1,box.size2.sizeX-lnw-1) vlines=build(mw)
+    end
+  end
+  layout={text=box.text,width=box.size2.sizeX,height=box.size2.sizeY,tabSize=box.tabSize,
+    showScroll=box.showScroll,lineNumbers=box.lineNumbers,wrap=box.wrap,
+    lineCount=#lines,lnw=lnw,mw=mw,scrollActive=scrollActive,vlines=vlines,
+    lines=lines}
+  box._layout=layout
+  return layout
+end
+local function renderInputHighlight(box,layout)
+  local mark=box.highlight
+  if not mark or mark.width<=0 then return end
+  local r=tgl.sys.renderer
+  local function draw(row,startVC,text)
+    local left=math.max(mark.startVC,startVC)
+    local right=math.min(mark.startVC+mark.width,startVC+layout.mw)
+    if left>=right then return end
+    local visible=_iFWidthSub(text,left-startVC,right-left)
+    if visible~="" then
+      r:set(tgl.Pos2:new(box.size2.x1+layout.lnw+left-startVC,box.size2.y1+row-1),
+        visible,box.cursorCol2,box.z_index)
+    end
+  end
+  for row=1,box.size2.sizeY do
+    local index=box.viewY+row
+    if box.wrap then
+      local line=layout.vlines[index]
+      if line and line.li==mark.line then draw(row,line.startVC,line.text) end
+    elseif index==mark.line and layout.lines[index] then
+      draw(row,0,layout.lines[index]:gsub("\t",string.rep(" ",box.tabSize)))
+    end
+  end
+end
+---Reveal a logical line/character column; optionally highlight length characters.
+function tgl.InputBox:showPosition(line,column,length)
+  local layout=inputBoxLayout(self)
+  line=math.max(1,math.min(layout.lineCount,line))
+  local text=layout.lines[line]
+  column=math.max(1,math.min(unicode.len(text)+1,column or 1))
+  local before=unicode.sub(text,1,column-1):gsub("\t",string.rep(" ",self.tabSize))
+  local vc=unicode.wlen(before)
+  local row=line
+  if self.wrap then
+    for i,part in ipairs(layout.vlines) do
+      if part.li==line then
+        row=i
+        if vc<part.startVC+layout.mw then break end
+      end
+    end
+  end
+  local total=self.wrap and #layout.vlines or layout.lineCount
+  self.viewY=math.max(0,math.min(row-1,total-self.size2.sizeY))
+  self.highlight=nil
+  if length and length>0 then
+    local found=unicode.sub(text,column,column+length-1):gsub("\t",string.rep(" ",self.tabSize))
+    self.highlight={line=line,startVC=vc,width=unicode.wlen(found)}
+  end
+end
 function tgl.InputBox:render()
   if self.hidden then return end
   local r=tgl.sys.renderer
@@ -711,34 +807,10 @@ function tgl.InputBox:render()
   local tabRepl=string.rep(" ",self.tabSize)
 
   if self.wrap then
-    local lines={}
-    for l in (self.text.."\n"):gmatch("([^\n]*)\n") do lines[#lines+1]=l end
-    local lnw=self.lineNumbers and (#tostring(#lines)+1) or 0
+    local layout=inputBoxLayout(self)
+    local lnw=layout.lnw
     local lnCol2=lnw>0 and (self.lineNumCol2 or tgl.Color2:new(tgl.defaults.colors16.darkgray,self.col2[2])) or nil
-    local function buildVL(mw)
-      local vl={}
-      for li,line in ipairs(lines) do
-        local exp=line:gsub("\t",tabRepl)
-        local len=unicode.wlen(exp)
-        if len==0 then
-          vl[#vl+1]={li=li,text="",startVC=0}
-        else
-          local pos=1
-          while pos<=len do
-            vl[#vl+1]={li=li,text=unicode.sub(exp,pos,math.min(pos+mw-1,len)),startVC=pos-1}
-            pos=pos+mw
-          end
-        end
-      end
-      return vl
-    end
-    local mw=self.size2.sizeX-lnw
-    local vlines=buildVL(mw)
-    local scrollActive=self.showScroll and #vlines>maxH
-    if scrollActive then
-      mw=self.size2.sizeX-lnw-1
-      vlines=buildVL(mw)
-    end
+    local mw,vlines,scrollActive=layout.mw,layout.vlines,layout.scrollActive
     if scrollActive then
       if not self._scrollbar then
         self._scrollbar=tgl.Scrollbar:new(
@@ -782,14 +854,14 @@ function tgl.InputBox:render()
       end
       y=y+1
     end
+    renderInputHighlight(self,layout)
     if scrollActive then self._scrollbar:render() end
     return
   end
 
-  local lineCount=0
-  for _ in (self.text.."\n"):gmatch("[^\n]*\n") do lineCount=lineCount+1 end
-  local scrollActive=self.showScroll and lineCount>maxH
-  local maxW=self.size2.sizeX-(scrollActive and 1 or 0)
+  local layout=inputBoxLayout(self)
+  local lineCount=layout.lineCount
+  local scrollActive=layout.scrollActive
   if scrollActive then
     if not self._scrollbar then
       self._scrollbar=tgl.Scrollbar:new(
@@ -816,7 +888,7 @@ function tgl.InputBox:render()
   end
   local lnw=self.lineNumbers and (#tostring(lineCount)+1) or 0
   local lnCol2=lnw>0 and (self.lineNumCol2 or tgl.Color2:new(tgl.defaults.colors16.darkgray,self.col2[2])) or nil
-  local textMaxW=maxW-lnw
+  local textMaxW=layout.mw
   local textX=self.size2.x1+lnw
   if lnw>0 then
     r:fill(tgl.Size2:newFromSize(self.size2.x1,self.size2.y1,lnw,maxH)," ",lnCol2,self.z_index)
@@ -824,23 +896,22 @@ function tgl.InputBox:render()
   local textW=scrollActive and textMaxW or (self.size2.sizeX-lnw)
   r:fill(tgl.Size2:newFromSize(textX,self.size2.y1,textW,maxH)," ",self.col2,self.z_index)
   local y=self.size2.y1
-  local lineN=0
-  for line in (self.text.."\n"):gmatch("([^\n]*)\n") do
-    lineN=lineN+1
-    if lineN>self.viewY then
-      if y>self.size2.y2 then break end
-      if lnw>0 then
-        r:set(tgl.Pos2:new(self.size2.x1,y),string.format("%"..(lnw-1).."d ",lineN),lnCol2,self.z_index)
-      end
-      line=line:gsub("\t",tabRepl)
-      if unicode.wlen(line)>textMaxW then line=unicode.sub(line,1,textMaxW) end
-      if #line>0 then r:set(tgl.Pos2:new(textX,y),line,self.col2,self.z_index) end
-      y=y+1
+  for lineN=self.viewY+1,math.min(lineCount,self.viewY+maxH) do
+    local line=layout.lines[lineN]
+    if lnw>0 then
+      r:set(tgl.Pos2:new(self.size2.x1,y),string.format("%"..(lnw-1).."d ",lineN),lnCol2,self.z_index)
     end
+    line=line:gsub("\t",tabRepl)
+    if unicode.wlen(line)>textMaxW then line=unicode.sub(line,1,textMaxW) end
+    if #line>0 then r:set(tgl.Pos2:new(textX,y),line,self.col2,self.z_index) end
+    y=y+1
   end
+  renderInputHighlight(self,layout)
   if scrollActive then self._scrollbar:render() end
 end
 function tgl.InputBox:input(startX,startY)
+  self.highlight=nil
+  self._layout=nil
   local r=tgl.sys.renderer
   local lines={}
   for line in (self.text.."\n"):gmatch("([^\n]*)\n") do lines[#lines+1]=line end
@@ -1063,6 +1134,11 @@ function tgl.InputBox:input(startX,startY)
 
     if id=="touch" then
       local tx,ty=a1,a2
+      local wm=tgl.sys.wm
+      local managed=wm and self._parentFrame and wm:getManagedWindow(self._parentFrame)
+      if managed and wm:getWindowAt(tx,ty)~=managed then
+        if self.stopOnClickOutside then break else goto continue end
+      end
       if self._scrollbar and tx==self._scrollbar.size2.x1
       and ty>=self._scrollbar.size2.y1 and ty<=self._scrollbar.size2.y2 then
         local startScroll=self._scrollbar.scroll
@@ -1093,7 +1169,8 @@ function tgl.InputBox:input(startX,startY)
       end
     else  --key_down
       local key,key2=a1,a2
-      if key==tgl.defaults.keys.esc then
+      if self.onKeyDown and self.onKeyDown(key,key2) then break
+      elseif key==tgl.defaults.keys.esc or key2==1 then
         break
       elseif key2==tgl.defaults.keys2.arrow_left then
         if col>1 then col=col-1
@@ -1152,9 +1229,14 @@ function tgl.InputBox:input(startX,startY)
   self._inputActive=nil
   self.text=table.concat(lines,"\n")
   if not (self._parentFrame and self._parentFrame.hidden) then
-    r:stop()
-    self:render()  --preserves self.viewY, re-arms onChange for non-edit scrolling
-    r:flush()
+    local wm=tgl.sys.wm
+    local managed=wm and self._parentFrame and wm:getManagedWindow(self._parentFrame)
+    if managed then wm:renderRegions({self.size2})
+    else
+      r:stop()
+      self:render()  --preserves self.viewY, re-arms onChange for non-edit scrolling
+      r:flush()
+    end
   end
 end
 

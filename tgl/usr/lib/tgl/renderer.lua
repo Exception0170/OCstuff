@@ -21,6 +21,7 @@ tgl.sys.resetKeybind=18 --Ctrl+R for reset
 ---@field _sw integer screen width captured at init
 tgl.Renderer={}
 tgl.Renderer.cmd={}
+tgl.Renderer.customCommands=true
 tgl.Renderer.__index=tgl.Renderer
 ---@param frequency number
 function tgl.Renderer:init(frequency)
@@ -69,6 +70,7 @@ function tgl.Renderer:resume() self.stopped=false end
 ---Resume and immediately execute any queued commands.
 function tgl.Renderer:flush(buffered)
   if buffered then self._buffered=true end
+  if self._deferFlush then return end
   self.stopped=false
   if self.dirty and not self.rendering then
     self:render()
@@ -110,6 +112,18 @@ end
 function tgl.Renderer:execCmd(cmd)
   if not cmd then return false end
   if not cmd.cmd then return false end
+  -- Reject invisible draws before switching buffers or issuing GPU color calls.
+  local clip=cmd.clipRegion
+  if clip and cmd.cmd=="fill" then
+    local s=cmd.size2
+    if s.x2<clip.x1 or s.x1>clip.x2 or s.y2<clip.y1 or s.y1>clip.y2 then return true end
+  elseif clip and cmd.cmd=="set" then
+    local x,y=cmd.pos2.x,cmd.pos2.y
+    if not cmd.vertical then
+      if y<clip.y1 or y>clip.y2 or x>clip.x2
+      or (x<clip.x1 and x+unicode.wlen(cmd.value)-1<clip.x1) then return true end
+    elseif x>clip.x2 or y>clip.y2 or y+unicode.len(cmd.value)-1<clip.y1 then return true end
+  end
   local buffer=cmd.buffer
   if buffer==0 and self._drawBuffer then buffer=self._drawBuffer end
   if buffer then
@@ -217,6 +231,8 @@ function tgl.Renderer:execCmd(cmd)
     self.gpu.freeAllBuffers()
     self.activeBuffer=0
     return true
+  elseif type(tgl.Renderer.cmd[cmd.cmd])=="function" then
+    return tgl.Renderer.cmd[cmd.cmd](self,cmd)
   else
     tgl.util.log("Unknown cmd: "..require("serialization").serialize(cmd),"Renderer")
   end
@@ -236,6 +252,38 @@ function tgl.Renderer:sortQueue()
     return a.order<b.order
   end)
 end
+-- Clipped text/fills need only their damaged screen area preserved and presented.
+-- Copies and custom commands keep the full-screen path because they may read elsewhere.
+local function presentationRegion(renderer)
+  local sw,sh=renderer._sw,tgl.defaults.screenSizeY
+  local region=nil
+  for _,cmd in ipairs(renderer.queue) do
+    if cmd.buffer==0 or (cmd.cmd=="bufcopy" and (cmd.src==0 or cmd.dst==0)) then
+      if cmd.cmd~="set" and cmd.cmd~="fill" then
+        return {x1=1,y1=1,x2=sw,y2=sh}
+      end
+      local clip=cmd.clipRegion
+      if not clip then
+        if cmd.cmd=="fill" then clip=cmd.size2
+        else
+          local x,y=cmd.pos2.x,cmd.pos2.y
+          clip={x1=x,y1=y,x2=x+unicode.wlen(cmd.value)-1,
+            y2=y+(cmd.vertical and unicode.len(cmd.value) or 1)-1}
+        end
+      end
+      local x1,y1=math.max(1,clip.x1),math.max(1,clip.y1)
+      local x2,y2=math.min(sw,clip.x2),math.min(sh,clip.y2)
+      if x1<=x2 and y1<=y2 then
+        if not region then region={x1=x1,y1=y1,x2=x2,y2=y2}
+        else
+          region.x1=math.min(region.x1,x1) region.y1=math.min(region.y1,y1)
+          region.x2=math.max(region.x2,x2) region.y2=math.max(region.y2,y2)
+        end
+      end
+    end
+  end
+  return region
+end
 ---@private
 function tgl.Renderer:render()
   self.rendering=true
@@ -247,7 +295,8 @@ function tgl.Renderer:render()
   for _,cmd in ipairs(self.queue) do
     if cmd.cmd=="freebuffers" then buffered=false end
   end
-  if buffered then
+  local present=buffered and presentationRegion(self) or nil
+  if present then
     local sw,sh=self.gpu.getResolution()
     local ok,buf=pcall(function()
       if self.gpu.freeMemory()<sw*sh then return nil end
@@ -258,7 +307,10 @@ function tgl.Renderer:render()
     end
   end
   local success, err=pcall(function()
-    if self._drawBuffer then self.gpu.bitblt(self._drawBuffer,1,1,self._sw,tgl.defaults.screenSizeY,0,1,1) end
+    if self._drawBuffer then
+      self.gpu.bitblt(self._drawBuffer,present.x1,present.y1,present.x2-present.x1+1,
+        present.y2-present.y1+1,0,present.x1,present.y1)
+    end
     for i=1,#self.queue do
       if not self:execCmd(self.queue[i]) then
         tgl.util.log("Failed executing: "..require("serialization").serialize(self.queue[i]),"Renderer")
@@ -272,7 +324,10 @@ function tgl.Renderer:render()
     local buf=self._drawBuffer
     self._drawBuffer=nil
     local ok,copyErr=pcall(function()
-      if success then self.gpu.bitblt(0,1,1,self._sw,tgl.defaults.screenSizeY,buf,1,1) end
+      if success then
+        self.gpu.bitblt(0,present.x1,present.y1,present.x2-present.x1+1,
+          present.y2-present.y1+1,buf,present.x1,present.y1)
+      end
     end)
     self.gpu.freeBuffer(buf)
     self.activeBuffer=self.gpu.getActiveBuffer()
