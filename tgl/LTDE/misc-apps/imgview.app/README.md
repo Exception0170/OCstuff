@@ -9,6 +9,10 @@ Start, or run `run imgview.app /home/picture.tmg` in CMD.
 File > Open accepts an image path. View > Image info shows its dimensions,
 color depth and character mode. Images are displayed at actual size.
 
+View > Refresh (F5) reloads the current image from disk, keeping the window size
+and scroll position. If the image shrank, scrolling is clamped to its new bounds.
+A failed reload keeps the currently displayed image.
+
 The footer uses two rows: image size and viewport position in pixels, followed
 by the navigation buttons. Color depth, character mode and transparency status
 are shown in Image info. With tgl-img 1.7, transparent areas show the canvas

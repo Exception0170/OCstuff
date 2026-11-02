@@ -117,6 +117,8 @@ config system (ltde/cfg/)
 additions
   [x] remake toolbar menus: gray background, tgl.Frame with inline borders instead of plain fill
   [x] shutdown dialog in start menu (exit shell / restart ltde / poweroff / restart pc / cancel)
+  [x] core-owned Screen Off, configurable idle timeout, input wake and fresh redraw
+        - suppress rendering while off without growing drawing queues; apps/services keep running
   [x] startup splash screen (logo, status line, wallpaper bg color)
   [x] startup progress bar follows completed stages through desktop readiness
   [x] configured startup delay pauses once at completion, not at each stage

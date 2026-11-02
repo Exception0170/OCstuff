@@ -11,7 +11,7 @@ end
 local path=...
 local uid=tostring(math.random(1,1000000))
 local events={}
-for _,name in ipairs({"close","open","rename","info","home","left","right","up","down","size","custom","help","about"}) do
+for _,name in ipairs({"close","open","refresh","rename","info","home","left","right","up","down","size","custom","help","about"}) do
   events[name]="imgview_"..name.."_"..uid
 end
 local gray=tgl.Color2:new(0,0xD2D2D2)
@@ -24,6 +24,7 @@ end
 table.insert(viewItems,{label="Custom size...",eventName=events.custom})
 table.insert(viewItems,{label="Top left",eventName=events.home})
 table.insert(viewItems,{label="Image info",eventName=events.info})
+table.insert(viewItems,{label="Refresh     F5",eventName=events.refresh})
 local closing=false
 local frame=ltwapi.addWindow(60,18,"Image Viewer",{
   onClose=function() closing=true ltevent.push(events.close) end,
@@ -140,13 +141,14 @@ local function scroll(x,y)
   redraw()
 end
 scrollbar.onChange=function(value) scroll(offsetX,value) end
-local function openImage(value)
+local function openImage(value,keepView)
   if not value or value=="" then return end
   value=fs.canonical(value)
   local loaded,err=tmg.Image:load(value)
-  if not loaded then ltnotify.error("Open image",tostring(err or "Could not load image.")) return end
+  if not loaded then ltnotify.error(keepView and "Refresh image" or "Open image",tostring(err or "Could not load image.")) return end
   if image then image:unload() end
-  image=loaded filename=value offsetX,offsetY=0,0
+  image=loaded filename=value
+  if not keepView then offsetX,offsetY=0,0 end
   image.autoPreload=false
   image.z_index=frame.z_index
   local title=fs.name(value)
@@ -154,6 +156,12 @@ local function openImage(value)
   windowTitle="Image Viewer - "..title
   frame.objects.titlebar.objects.title.maxLength=frame.size2.sizeX-10
   frame.objects.titlebar.objects.title.text=windowTitle
+  if keepView then
+    local maxX,maxY=limits()
+    offsetX=math.min(offsetX,maxX) offsetY=math.min(offsetY,maxY)
+    redraw()
+    return
+  end
   local selected=presets[#presets]
   for _,size in ipairs(presets) do
     if image.size2.sizeX<=size[1] and image.size2.sizeY*2<=size[2] then selected=size break end
@@ -188,12 +196,13 @@ local ok,err=pcall(function()
     if ev==events.open then
       local value=ltnotify.prompt("Open image","Path to a .tmg file:")
       if value then openImage(value) end
+    elseif ev==events.refresh then openImage(filename,true)
     elseif ev==events.rename then rename()
     elseif ev==events.help then 
       ltnotify.dialog("Image Viewer Help","Pan image with buttons,\n"..
       "scrolling(shift-scroll for horizontal),\n"..
       "or arrow keys.\n"..
-      "You can change app size in the View tab",{"OK"})
+      "You can change app size in the View tab.\nF5 reloads the current image from disk.",{"OK"})
     elseif ev==events.about then
       ltnotify.dialog("Image Viewer","TMG Image viewer v"..version.."\ntgl-img version "..tmg.ver,{"OK"})
     elseif ev==events.custom then customSize()
@@ -205,7 +214,8 @@ local ok,err=pcall(function()
     elseif ev==events.up then scroll(offsetX,offsetY-1)
     elseif ev==events.down then scroll(offsetX,offsetY+1)
     elseif ev=="key_down" then
-      if c==203 then scroll(offsetX-1,offsetY)
+      if c==63 then openImage(filename,true)
+      elseif c==203 then scroll(offsetX-1,offsetY)
       elseif c==205 then scroll(offsetX+1,offsetY)
       elseif c==200 then scroll(offsetX,offsetY-1)
       elseif c==208 then scroll(offsetX,offsetY+1)

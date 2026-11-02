@@ -6,3 +6,4 @@ association. App-specific requirements are in each bundle's README.
 
 - [Image Viewer](imgview.app/README.md): actual-size viewing and scrolling of TMG images.
 - [TPaint](tpaint.app/README.md): drawing and editing ordinary TMG images.
+- [MExplorer](mexplorer.app/README.md): ME inventory, crafting, CPU/power status and inventory export.
