@@ -69,6 +69,7 @@ function tgl.Renderer:stop() self.stopped=true end
 function tgl.Renderer:resume() self.stopped=false end
 ---Resume and immediately execute any queued commands.
 function tgl.Renderer:flush(buffered)
+  if self.suspended then return end
   if buffered then self._buffered=true end
   if self._deferFlush then return end
   self.stopped=false
@@ -76,12 +77,30 @@ function tgl.Renderer:flush(buffered)
     self:render()
   end
 end
+---Discard drawing while the host's display is off. The host must redraw on wake.
+function tgl.Renderer:setSuspended(value)
+  if self.rendering or self._deferFlush then return false end
+  if value then
+    self:flush()
+    for _,queue in ipairs({self.queue,self.nextQueue}) do
+      for _,cmd in ipairs(queue) do
+        if cmd.cmd=="freebuffer" or cmd.cmd=="freebuffers" then self:execCmd(cmd) end
+      end
+    end
+    self.queue={} self.nextQueue={}
+    self.dirty=false self.frameCounter=0
+    self._buffered=nil
+  end
+  self.suspended=value==true
+  return true
+end
 function tgl.Renderer:finish()
   if not self.timer then return false end
   event.ignore("key_down",self.resetKeybind)
   local ok=event.cancel(self.timer)
   self.timer=nil
   self.stopped=false
+  self.suspended=false
   self.queue={}
   self.nextQueue={}
   self.dirty=false
@@ -93,6 +112,11 @@ function tgl.Renderer:addCmd(cmd)
   if type(cmd)~="table" then
     tgl.util.log("Corrupted command add: "..type(cmd))
     return false
+  end
+  if self.suspended then
+    --Resource releases must still happen; drawing must not grow the queue.
+    if cmd.cmd=="freebuffer" or cmd.cmd=="freebuffers" then return self:execCmd(cmd) end
+    return true
   end
   if not cmd.z_index then cmd.z_index=0 end
   if not cmd.buffer then cmd.buffer=0 end
@@ -286,6 +310,7 @@ local function presentationRegion(renderer)
 end
 ---@private
 function tgl.Renderer:render()
+  if self.suspended then return end
   self.rendering=true
   self:sortQueue()
   local prev_pos2,prev_col2=tgl.getCursorState()
@@ -485,6 +510,7 @@ end
 ---@param sizeY integer
 ---@return boolean,integer|nil
 function tgl.Renderer:allocateBuffer(sizeX,sizeY)
+  if self.suspended then return false end
   if type(sizeX)~="number" or type(sizeY)~="number" then
     tgl.util.log("Unvalid buffer allocation: "..tostring(sizeX).." x "..tostring(sizeY),"Renderer")
     return false

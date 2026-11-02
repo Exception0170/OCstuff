@@ -18,6 +18,7 @@ queue. After each render, the renderer emits `renderDone` on the OpenOS bus.
 | `r:stop()` | Pause timer-driven rendering; commands can still be queued |
 | `r:resume()` | Allow timer-driven rendering again |
 | `r:flush(buffered?)` | Resume and immediately render dirty work if not already rendering |
+| `r:setSuspended(bool)` | Suppress drawing and new buffer allocation; host must redraw on resume |
 | `r:finish()` | Remove timer/listener, discard pending queues and free GPU buffers |
 
 `stop` is not teardown, and `flush` leaves the renderer running. `finish` does not
@@ -25,6 +26,13 @@ disable widgets. Disable their handlers first. It frees all GPU buffers, not jus
 those belonging to one app; only the owner of the graphics session should call
 it. The same renderer can be started again after finish. Calling init while an
 instance exists does not replace it or change its timer interval.
+
+Display hosts can call `setSuspended(true)` to finish pending drawing and discard
+subsequent draw commands without accumulating them. Buffer releases still run.
+`flush`, `resume` and timer ticks do not override suspension. Call
+`setSuspended(false)`, then redraw current UI state to show updates made while
+suspended. The method returns false during an active render or deferred batch;
+retry when that work has finished. Direct GPU drawing bypasses this mechanism.
 
 `waitForAll()` waits for the next `renderDone` event. It does not test whether the
 queue is already empty and does not prove there is no next queue. For ordinary
