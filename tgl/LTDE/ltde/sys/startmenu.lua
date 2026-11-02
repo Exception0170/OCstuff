@@ -65,7 +65,7 @@ end
 local function showShutdownDialog()
   _serial=_serial+1
   local done="ltde_power_".._serial
-  local w,h=26,8
+  local w,h=26,9
   local sw,sh=tgl.defaults.screenSizeX,tgl.defaults.screenSizeY
   local objects={
     title=tgl.Frame:new({tgl.Text:new("Power Options",_logoCol,tgl.Pos2:new(2,1))},tgl.Size2:new(2,2,w-2,1),_logoCol)
@@ -75,6 +75,7 @@ local function showShutdownDialog()
     {"Restart LTDE","ltde_restart_ltde"},
     {"Shut Down Computer","ltde_computer_poweroff"},
     {"Restart Computer","ltde_computer_restart"},
+    {"Screen Off","ltde_screen_off"},
     {"Cancel",nil}
   }
   for i,choice in ipairs(choices) do

@@ -10,6 +10,7 @@ local files={
   "/ltde/sys/slib/ltcalc.lua",
   "/ltde/sys/crash.lua",
   "/ltde/sys/core.lua",
+  "/ltde/sys/display.lua",
   "/ltde/sys/splash.lua",
   "/ltde/sys/ltwm.lua",
   "/ltde/sys/runctl.lua",

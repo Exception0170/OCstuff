@@ -53,13 +53,15 @@ function ltwm.WindowManager:new()
 
         local function eraseCursor()
           if not saved then return end
-          tgl.changeToColor2(saved.col)
-          r.gpu.set(saved.x,saved.y,saved.char)
+          if not r.suspended then
+            tgl.changeToColor2(saved.col)
+            r.gpu.set(saved.x,saved.y,saved.char)
+          end
           saved=nil
         end
 
         local function drawCursor(x,y)
-          if obj._dragCursor=="" then return end
+          if r.suspended or obj._dragCursor=="" then return end
           local sw=tgl.defaults.screenSizeX
           local sh=tgl.defaults.screenSizeY
           if x<1 or x>sw or y<1 or y>sh then return end

@@ -30,7 +30,8 @@ function ltwapi.showMenu(anchorPos2,items,col2,z)
   end
   -- +2 on each axis for inline border
   local frameSize=tgl.Size2:newFromSize(anchorPos2.x,anchorPos2.y+1,width+2,#items+2)
-  local ss=tgl.ScreenSave:new(frameSize)
+  local manager=wm()
+  local ss=not manager and tgl.ScreenSave:new(frameSize) or nil
 
   local result=nil
   local frameObjs={}
@@ -44,6 +45,7 @@ function ltwapi.showMenu(anchorPos2,items,col2,z)
   local frame=tgl.Frame:new(frameObjs,frameSize,col2)
   frame.z_index=z
   frame.borders="─│┌┐└┘"
+  local overlay=manager and manager:addOverlay(frame)
 
   r:stop()
   frame:render()
@@ -62,9 +64,14 @@ function ltwapi.showMenu(anchorPos2,items,col2,z)
   event.ignore("touch",outsideHandler)
   tgl.sys.setActiveArea(prevAA)
   frame:disableAll()
-  ss:render()
-  --Restore the popup area before its action can resize or close the window.
-  r:flush()
+  --Restore current content before the action can resize or close the window.
+  if overlay then
+    manager:removeOverlay(overlay)
+    manager:renderRegions({frameSize})
+  else
+    ss:render()
+    r:flush()
+  end
   if not _ok then error(_err,0) end
   if result and result.eventName then
     event.push(result.eventName,result.value)

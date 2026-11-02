@@ -6,7 +6,7 @@ local thread=require("thread")
 local tgl=require("tgl")
 local fs=require("filesystem")
 
-_G._ltde_version="release build v1.0.2110"
+_G._ltde_version="release build v1.0.0211"
 
 ---Load a system file, BSOD on failure
 local function loadsys(path)
@@ -129,6 +129,7 @@ for _,err in ipairs(serviceErrors) do slog.log("Service startup: "..err,"core",2
 splashLib.setStatus("Desktop ready",1)
 splashLib.finishStartup()
 tgl.sys.wm:renderRegions({tgl.Size2:new(1,1,sw,sh)})
+local display=loadsys("/ltde/sys/display.lua")()(tgl.sys.wm,function() return _G.ltcfg.display end)
 
 local running=true
 local coreError=nil
@@ -200,6 +201,7 @@ end
 
 local function shutdown()
   slog.log("Shutdown sequence","core")
+  display.cleanup()
   -- Cancel all timer-based renders FIRST so nothing overwrites the shutdown screen
   services.cleanup()
   ltnotify.cleanup()
@@ -275,7 +277,17 @@ local function coreLoop()
       elseif id=="ltde_computer_poweroff" then onComputerPoweroff()
       elseif id=="ltde_computer_restart" then onComputerRestart()
       elseif id=="ltde_restart_ltde" then onRestartLtde()
+      elseif id=="ltde_screen_off" then
+        local ok,err=display.off()
+        if not ok then ltnotify.error("Screen off",err) end
+      elseif id=="ltde_screen_wake" then
+        local ok,err=display.wake()
+        if not ok then slog.log("Screen wake: "..tostring(err),"core",1) end
       elseif id=="ltde_open_app" then onOpenApp(a)
+      end
+      if running then
+        local ok,err=display.update()
+        if ok==false then slog.log("Screen off: "..tostring(err),"core",1) end
       end
     end
   end)
