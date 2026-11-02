@@ -44,6 +44,13 @@ buttons minimize or close it; taskbar buttons restore windows or bring them to
 the front. Start's power menu can exit to OpenOS, restart LTDE, or shut down or
 restart the computer.
 
+Start > Shut Down > Screen Off turns off the display. Keyboard or mouse input
+wakes it. Applications and services keep running; this does not lock the desktop.
+Drawing pauses while off, and the desktop redraws with current app content on wake.
+The default idle timeout is five minutes. Change Appearance's Screen off timeout
+in Control Panel, or `screen_off_timeout` in `/ltde/cfg/display.conf`; `0` disables
+automatic screen-off. Control Panel changes apply immediately.
+
 The release includes:
 
 - **Explorer:** files, mounted devices, copy/move/delete, search, bookmarks and

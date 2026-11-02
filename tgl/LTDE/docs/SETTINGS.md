@@ -42,6 +42,12 @@ Field kinds:
 that needs a different runtime action also needs an application-side handler;
 writing its value alone does not reconfigure a running service.
 
+Appearance includes `display.conf`'s `screen_off_timeout`, in seconds (default
+300; `0` disables automatic screen-off). Core reads the loaded setting each time
+it checks for idle time, so Control Panel changes apply without restarting LTDE.
+Keyboard and mouse activity reset the timeout and wake the screen. Apps keep
+running while drawing is suppressed; waking redraws their current UI state.
+
 ## Settings library
 
 Load `/ltde/sys/slib/ltsettings.lua` with `loadfile(...)()` in system-mode code.

@@ -14,6 +14,7 @@ not created for each window.
 | `/usr/lib/tgl-img.lua` | Image support |
 | `/ltde/sys/init.lua` | Startup checks and top-level crash handling |
 | `/ltde/sys/core.lua` | Initializes the desktop and handles system events |
+| `/ltde/sys/display.lua` | Core-owned screen power, input activity and idle timeout |
 | `/ltde/sys/ltwm.lua` | Window records, focus, stacking and composition |
 | `/ltde/sys/runctl.lua` | App loading, threads and process cleanup |
 | `/ltde/sys/slib/` | App APIs and shared helpers |
@@ -62,6 +63,8 @@ core. They do not depend on a particular app remaining alive.
 | `ltde_app_exit, pid` | Log the app's exit |
 | `ltde_app_crash, name, pid, traceback` | Save a crash report and show a dialog |
 | `ltde_shutdown_request` | Exit to OpenOS |
+| `ltde_screen_off` | Turn off the display and suppress rendering |
+| `ltde_screen_wake` | Redraw current windows and turn the display on |
 | `ltde_restart_ltde` | Shut down this session, then run init again |
 | `ltde_computer_poweroff` | Shut down LTDE, then power off |
 | `ltde_computer_restart` | Shut down LTDE, then reboot the computer |
