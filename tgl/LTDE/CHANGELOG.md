@@ -1,5 +1,14 @@
 # Changes
 
+## release build v1.0.0211
+
+- Core-owned Screen Off with a configurable idle timeout and keyboard/mouse wake.
+- Drawing pauses while the screen is off; waking redraws current app content.
+- Screen off timeout can be changed immediately through Control Panel.
+- Open popup menus participate in desktop redraws and restore current content when closed.
+- Includes TGL 0.9.7, tgl-ui and tgl-img 1.7.
+- Image Viewer, TPaint and MExplorer are distributed in the separate optional-app archive.
+
 ## release build v1.0.2110
 
 - Notepad 1.1: Find, Find Next/Previous, case matching and search shortcuts.
