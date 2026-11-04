@@ -6,6 +6,8 @@ return function(tgl)
 ---@param len integer
 ---@return string
 function tgl.util.getLine(pos2,len)
+  checkArg(1,pos2,"table")
+  checkArg(2,len,"number")
   local s=""
   for i=1,len do
     local char=tgl.sys.renderer:getPoint(pos2.x+i-1,pos2.y)
@@ -19,6 +21,9 @@ end
 ---@param text string
 ---@param col2? tgl.Color2
 function tgl.util.getLineMatched(pos2,text,col2)
+  checkArg(1,pos2,"table","nil")
+  checkArg(2,text,"string","nil")
+  checkArg(3,col2,"table","nil")
   local r=tgl.sys.renderer
   if type(pos2)~="table" then return end
   if not text then return end
@@ -70,6 +75,8 @@ end
 ---@param ignore? boolean if function should ignore previous color
 ---@return tgl.Color2|false|nil
 function tgl.changeToColor2(col2,ignore)
+  checkArg(1,col2,"table","nil")
+  checkArg(2,ignore,"boolean","nil")
   if not col2 then return false end
   local r=tgl.sys.renderer
   local old=nil

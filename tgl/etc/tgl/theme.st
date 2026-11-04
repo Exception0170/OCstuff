@@ -1,0 +1,1 @@
+{colors={},chars={scrollbarTrack="▒",scrollbarThumb="█"}}

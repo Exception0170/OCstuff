@@ -21,6 +21,7 @@ tgl.sys.dirtyRegions={}
 ---Marks a region as needing redraw
 ---@param size2 tgl.Size2
 function tgl.sys.markDirty(size2)
+  checkArg(1,size2,"table","nil")
   if size2 and size2.type=="Size2" then
     table.insert(tgl.sys.dirtyRegions,size2)
   end
@@ -32,6 +33,7 @@ end
 ---Sets new active area
 ---@param size2 tgl.Size2
 function tgl.sys.setActiveArea(size2)
+  checkArg(1,size2,"table")
   if size2.type=="Size2" then
     tgl.sys.activeArea=size2
     return true
@@ -50,6 +52,8 @@ end
 ---@param size2 tgl.Size2
 ---@return boolean
 function tgl.util.pos2InSize2(pos2,size2)
+  checkArg(1,pos2,"table")
+  checkArg(2,size2,"table")
   if size2.type~="Size2" or pos2.type~="Pos2" then return false end
   if pos2.x>=size2.x1 and pos2.x<=size2.x2 and
      pos2.y>=size2.y1 and pos2.y<=size2.y2 then return true
@@ -61,7 +65,10 @@ end
 ---@param size2 tgl.Size2
 ---@return boolean
 function tgl.util.pointInSize2(x,y,size2)
-  if size2.type~="Size2" or type(x)~="number" or type(y)~="number" then return false end
+  checkArg(1,x,"number")
+  checkArg(2,y,"number")
+  checkArg(3,size2,"table")
+  if size2.type~="Size2" then return false end
   if x>=size2.x1 and x<=size2.x2 and y>=size2.y1 and y<= size2.y2 then return true
   else return false end
 end
@@ -70,7 +77,8 @@ end
 ---@param size2 tgl.Size2
 ---@return boolean
 function tgl.util.size2InSize2(size1,size2)
-  if type(size1)~="table" or type(size2)~="table" then return false end
+  checkArg(1,size1,"table")
+  checkArg(2,size2,"table")
   if size1.type~="Size2" or size2.type~="Size2" then return false end
   if size2.x1>=size1.x1 and size2.x2<=size1.x2
   and size2.y1>=size1.y1 and size2.y2<=size1.y2 then return true
@@ -81,7 +89,8 @@ end
 ---@param size2 tgl.Size2
 ---@return boolean
 function tgl.util.size2Intersects(size1,size2)
-  if type(size1)~="table" or type(size2)~="table" then return false end
+  checkArg(1,size1,"table")
+  checkArg(2,size2,"table")
   if size1.type~="Size2" or size2.type~="Size2" then return false end
   return not (size1.x2<size2.x1 or size1.x1>size2.x2 or size1.y2<size2.y1 or size1.y1>size2.y2)
 end
@@ -139,6 +148,9 @@ tgl.Color2.__index=tgl.Color2
 ---@param col2? integer background color
 ---@return tgl.Color2
 function tgl.Color2:new(col1,col2,is_palette)
+  checkArg(1,col1,"number","string","nil")
+  checkArg(2,col2,"number","string","nil")
+  checkArg(3,is_palette,"boolean","nil")
   if not col1 then col1=tgl.defaults.foregroundColor end
   if not col2 then col2=tgl.defaults.backgroundColor end
   col1=tonumber(col1)
@@ -163,6 +175,7 @@ end
 ---@param col2 tgl.Color2
 ---@return tgl.Color2
 function tgl.invertColor2(col2)
+  checkArg(1,col2,"table","nil")
   if not col2 then return nil end
   return tgl.Color2:new(col2[2],col2[1])
 end
@@ -170,6 +183,8 @@ end
 ---Colored term.write function
 ---@param col2? tgl.Color2 default: `tgl.defaults.colors2.error`
 function tgl.cwrite(text,col2)
+  checkArg(1,text,"string")
+  checkArg(2,col2,"table","nil")
   if not col2 then col2=tgl.defaults.colors2.error end
   local p=tgl.changeToColor2(col2,false)
   term.write(text)
@@ -178,6 +193,8 @@ end
 ---Colored print function
 ---@param col2? tgl.Color2 default: `tgl.defaults.colors2.error`
 function tgl.cprint(text,col2)
+  checkArg(1,text,"string","number")
+  checkArg(2,col2,"table","nil")
   tgl.cwrite(text.."\n",col2)
 end
 
@@ -193,6 +210,8 @@ tgl.Pos2.__index=tgl.Pos2
 ---@param y? integer
 ---@return tgl.Pos2
 function tgl.Pos2:new(x,y)
+  checkArg(1,x,"number","string","nil")
+  checkArg(2,y,"number","string","nil")
   if not x then x=1 end
   if not y then y=1 end
   x=tonumber(x)
@@ -216,6 +235,9 @@ end
 ---@param ignore? boolean if set to `false|nil`, returns previous cursor Pos2
 ---@param offsetX? integer offset x from pos2 
 function tgl.changeToPos2(pos2,ignore,offsetX)
+  checkArg(1,pos2,"table","nil")
+  checkArg(2,ignore,"boolean","nil")
+  checkArg(3,offsetX,"number","nil")
   if not pos2 then return false end
   if not offsetX then offsetX=0 end
   if not ignore then
@@ -246,6 +268,9 @@ end
 ---@param pos2 tgl.Pos2
 ---@param col2 tgl.Color2
 function tgl.setCursorState(pos2,col2,ignore)
+  checkArg(1,pos2,"table","nil")
+  checkArg(2,col2,"table","nil")
+  checkArg(3,ignore,"boolean","nil")
   if not pos2 or not col2 then return end
   local oldcol2=tgl.changeToColor2(col2,ignore)
   local oldpos2=tgl.changeToPos2(pos2,ignore)
@@ -272,8 +297,10 @@ tgl.Size2.__index=tgl.Size2
 ---@param y2 integer
 ---@return tgl.Size2
 function tgl.Size2:newFromPoint(x1,y1,x2,y2)
-  if type(x1)~="number" or type(x2)~="number"
-  or type(y1)~="number" or type(y2)~="number" then return nil end
+  checkArg(1,x1,"number")
+  checkArg(2,y1,"number")
+  checkArg(3,x2,"number")
+  checkArg(4,y2,"number")
   local pos1=tgl.Pos2:new(x1,y1)
   local pos2=tgl.Pos2:new(x2,y2)
   if pos1 and pos2 then
@@ -296,6 +323,8 @@ end
 ---@param pos2 tgl.Pos2 bottom right
 ---@return tgl.Size2
 function tgl.Size2:newFromPos2(pos1,pos2)
+  checkArg(1,pos1,"table")
+  checkArg(2,pos2,"table")
   if pos1.type and pos2.type then
     local obj=setmetatable({},self)
     obj.type="Size2"
@@ -318,8 +347,14 @@ end
 ---@param sizeY integer
 ---@return tgl.Size2
 function tgl.Size2:newFromSize(x,y,sizeX,sizeY)
+  checkArg(1,x,"number","string")
+  checkArg(2,y,"number","string")
+  checkArg(3,sizeX,"number","string")
+  checkArg(4,sizeY,"number","string")
+  x,y,sizeX,sizeY=tonumber(x),tonumber(y),tonumber(sizeX),tonumber(sizeY)
+  if not x or not y or not sizeX or not sizeY then return nil end
   local pos1=tgl.Pos2:new(x,y)
-  if pos1 and tonumber(sizeX) and tonumber(sizeY) then
+  if pos1 then
     local obj=setmetatable({},self)
     obj.type="Size2"
     obj.x1=x
@@ -341,6 +376,7 @@ end
 ---@param pos2 tgl.Pos2
 ---@return boolean
 function tgl.Size2:moveToPos2(pos2)
+  checkArg(1,pos2,"table","nil")
   if not pos2 then return false end
   self.x1=pos2.x
   self.y1=pos2.y

@@ -1,5 +1,9 @@
 # tgl-img 1.7
 
+In TGLv10, image support is included as lazy-loaded `tgl.Image` and `tgl.img`.
+The `require("tgl-img")` import remains an alias to `tgl.img`; the API below is
+unchanged. See [TGLv10 integration](TGLv10.md#tmg-images).
+
 `tgl-img` loads, saves and draws TMG images. It is a separate module used with
 TGLv9 (`0.9.6`):
 

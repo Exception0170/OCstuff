@@ -4,253 +4,16 @@ local event=require("event")
 local unicode=require("unicode")
 local tui={}
 tui.ver="1.3.2"
---moved from tgl.defaults
 
----Checkbox object
----@class tui.CheckBox:tgl.LineObjectInteractable
----@field char string Clicked character
----@field width integer Length
----@field handler function
----@field toggle function
----@field value boolean Checked/not
----@field text string
-tui.CheckBox=setmetatable({},{__index=tgl.LineObjectInteractable})
-tui.CheckBox.__index=tui.CheckBox
----@param pos2? tgl.Pos2
----@param col2? tgl.Color2
----@param width? integer
----@param char? string
----@return tui.CheckBox
-function tui.CheckBox:new(pos2,col2,width,char)
-  local obj=setmetatable({},self)
-  obj.type="CheckBox"
-  obj.pos2=pos2 or tui.Pos2:new()
-  obj.col2=col2 or tui.Color2:new()
-  obj.char=char or "*"
-  obj.enabled=false
-  obj.value=false
-  obj.z_index=0
-  obj.width=width or 1
-  obj.text=string.rep(" ",1)
-  obj.checkRendered=true
-  obj.handler=function(_,_,x,y)
-    if x>=obj.pos2.x
-    and x<obj.pos2.x+unicode.wlen(obj.text)
-    and y==obj.pos2.y
-    and tgl.util.pointInSize2(x,y,tgl.sys.activeArea) then
-      if obj.checkRendered then
-        if tgl.util.getLineMatched(obj.pos2,obj.text,obj.col2)/unicode.wlen(obj.text)<0.6 then
-          return
-        end
-      end
-      obj:toggle()
-    end
-  end
-  return obj
-end
-function tui.CheckBox:enable()
-  if self.hidden or self.enabled then return end
-  self.enabled=true
-  event.listen("touch",self.handler)
-end
-function tui.CheckBox:disable()
-  self.enabled=false
-  event.ignore("touch",self.handler)
-end
-function tui.CheckBox:render()
-  if self.hidden then return end
-  tgl.sys.renderer:set(self.pos2,self.text,self.col2,self.z_index)
-end
-function tui.CheckBox:toggle()
-  self:disable()
-  if self.value==true then
-    self.value=false
-    self.text=string.rep(" ",self.width)
-  else
-    self.value=true
-    local size=math.floor((self.width-unicode.wlen(self.char))/2)
-    local size2=math.ceil((self.width-unicode.wlen(self.char))/2)
-    self.text=string.rep(" ",size)..self.char..string.rep(" ",size2)
-  end
-  self:render()
-  os.sleep(.5)
-  self:enable()
-end
-
----Progressbar LineObject
----@class tui.Progressbar:tgl.LineObject
----@field width integer
----@field text string
----@field value number Percentage, from 0 to 1
----@field setValue function 
-tui.Progressbar=setmetatable({},{__index=tgl.LineObject})
-tui.Progressbar.__index=tui.Progressbar
----@param pos2? tgl.Pos2
----@param width? integer defaults to 10
----@param col2? tgl.Color2 defaults to `tgl.defaults.colors2.progressbar`
----@return tui.Progressbar
-function tui.Progressbar:new(pos2,width,col2)
-  local obj=setmetatable({},tui.Progressbar)
-  obj.type="Progressbar"
-  obj.z_index=0
-  obj.pos2=pos2 or tgl.Pos2:new()
-  obj.width=tonumber(width) or 10
-  obj.col2=col2 or tgl.defaults.colors2.progressbar
-  obj.text=string.rep(" ",obj.width)
-  obj.value=0
-  return obj
-end
-function tui.Progressbar:render()
-  local fill=math.floor(self.width*self.value)
-  self.text=string.rep(tgl.defaults.chars.full,fill)..string.rep(" ",self.width-fill)
-  tgl.sys.renderer:set(self.pos2,self.text,self.col2,self.z_index)
-end
----Set progressbar to percentage
----@param num number Percent from 0 to 1
----@param render boolean Should it render immediately
----@return boolean
-function tui.Progressbar:setValue(num,render)
-  if not tonumber(num) then return false end
-  if num>1 or num<0 then return false end
-  self.value=num
-  if render then self:render() end
-  return true
-end
-
----@class tui.DropdownMenu:tgl.LineObjectInteractable
----@field text string
----@field menuCol2 tgl.Color2
----@field width integer
----@field options string[]
----@field value string
----@field handler function
----@field opened boolean
----@field closeOnDefocus boolean
----@field icons string icons to use
----@field eventName string event to fire
----@field defaultText string
-tui.DropdownMenu=setmetatable({},{__index=tgl.LineObjectInteractable})
-tui.DropdownMenu.__index=tui.DropdownMenu
----@param pos2 tgl.Pos2
----@param width integer
----@param col2 tgl.Color2
----@param options string[]
----@param eventName? string
----@param menuCol2? tgl.Color2
----@return tui.DropdownMenu
-function tui.DropdownMenu:new(pos2,width,col2,options,eventName,menuCol2)
-  if not pos2 or not width or not col2 then return end
-  local obj=setmetatable({},self)
-  obj.type="DropdownMenu"
-  obj.z_index=0
-  obj.pos2=pos2
-  obj.width=width
-  obj.col2=col2
-  obj.menuCol2=menuCol2 or col2
-  obj.options=options or {"Select","Empty1","Empty2"}
-  obj.value=obj.options[1]
-  obj.text=obj.value
-  obj.checkRendered=true
-  obj.opened=false
-  obj.closeOnDefocus=true
-  obj.icons="▾▴"
-  obj.eventName=eventName or ""
-  obj.defaultText=nil
-  obj.handler=function(_,_,x,y)
-    if x>=obj.pos2.x and x<obj.pos2.x+obj.width and y==obj.pos2.y
-    and tgl.util.pointInSize2(x,y,tgl.sys.activeArea) then
-      --open/close
-      if obj.checkRendered then
-        if tgl.util.getLineMatched(obj.pos2,obj.text,obj.col2)/unicode.wlen(obj.value)<0.6 then
-          return
-        end
-      end
-      if obj.opened==false then
-        obj.opened=true
-        obj:showOptions()
-        obj:render()
-      else
-        obj.opened=false
-        obj:hideOptions()
-        obj:render()
-      end
-    elseif obj.opened==true then
-      if x>=obj.pos2.x and x<obj.pos2.x+obj.width
-      and y>obj.pos2.y and y<=obj.pos2.y+#obj.options
-      and tgl.util.pointInSize2(x,y,tgl.sys.activeArea) then
-        --click
-        local chosen=y-obj.pos2.y
-        if not obj.options[chosen] then
-          tgl.util.log("Fatal: no such option: '"..chosen.."', undefined behavior!","DropdownMenu/handler")
-        else
-          obj.value=obj.options[chosen]
-          if obj.eventName~="" then
-            event.push(obj.eventName,obj.value)
-          end
-        end
-        obj.opened=false
-        obj:hideOptions()
-        obj:render()
-      elseif obj.closeOnDefocus then
-        obj.opened=false
-        obj:hideOptions()
-        obj:render()
-      end
-    end
-  end
-  return obj
-end
-function tui.DropdownMenu:showOptions()
-  if self.hidden then return end
-  local options_size2=tgl.Size2:new(self.pos2.x,self.pos2.y+1,self.width,#self.options)
-  self.ss=tgl.ScreenSave:new(options_size2)
-  local r=tgl.sys.renderer
-  r:fill(options_size2," ",self.menuCol2,self.z_index)
-  for i=1,#self.options do
-    local text=self.options[i]
-    if unicode.wlen(text)>self.width then
-      text=unicode.sub(text,1,self.width-2)..".."
-    end
-    r:setPoint(self.pos2.x,self.pos2.y+i,text,self.menuCol2,self.z_index)
-  end
-end
-function tui.DropdownMenu:hideOptions()
-  if self.ss then
-    self.ss:render()
-    self.ss=nil
-  end
-end
-function tui.DropdownMenu:render()
-  if self.hidden then return end
-  if self.defaultText then
-    self.text=self.defaultText
-  else
-    local icon=""
-    if self.opened then icon=unicode.sub(self.icons,2,2)
-    else icon=unicode.sub(self.icons,1,1) end
-    self.text=self.value
-    if unicode.wlen(self.text)>=self.width then
-      self.text=unicode.sub(self.text,1,self.width-3)..".."..icon
-    else
-      self.text=self.text..string.rep(" ",self.width-unicode.wlen(self.text)-1)..icon
-    end
-  end
-  tgl.sys.renderer:set(self.pos2,self.text,self.col2,self.z_index)
-end
-function tui.DropdownMenu:enable()
-  if self.enabled==true or self.hidden==true then return end
-  self.enabled=true
-  event.listen("touch",self.handler)
-end
-function tui.DropdownMenu:disable()
-  self.enabled=false
-  event.ignore("touch",self.handler)
-  if self.opened==true then
-    self.opened=false
-    self.ss:unload()
-    self.ss=nil
-  end
-end
+--Compatibility names for the core widgets.
+---@type tgl.CheckBox
+tui.CheckBox=tgl.CheckBox
+---@type tgl.RadioButton
+tui.RadioButton=tgl.RadioButton
+---@type tgl.Progressbar
+tui.Progressbar=tgl.Progressbar
+---@type tgl.DropdownMenu
+tui.DropdownMenu=tgl.DropdownMenu
 
 --[[menuBar
 items={
@@ -321,6 +84,10 @@ self.frames={
 ---@param framecol? tgl.Color2 of window background
 ---@return tgl.Frame
 function tui.window(size2,title,barcol,framecol)
+  checkArg(1,size2,"table","nil")
+  checkArg(2,title,"string","nil")
+  checkArg(3,barcol,"table","nil")
+  checkArg(4,framecol,"table","nil")
   if not size2 then return nil end
   if not title then title="Untitled" end
   if not barcol then barcol=tgl.Color2:new(0xFFFFFF,tgl.defaults.colors16.lightblue) end
@@ -341,6 +108,11 @@ end
 ---@param framecol? tgl.Color2 of window background
 ---@return tgl.Frame
 function tui.window_outlined(size2,title,borders,barcol,framecol)
+  checkArg(1,size2,"table","nil")
+  checkArg(2,title,"string","nil")
+  checkArg(3,borders,"string","nil")
+  checkArg(4,barcol,"table","nil")
+  checkArg(5,framecol,"table","nil")
   if not size2 then return nil end
   if not title then title="Untitled" end
   if not borders then borders=tgl.defaults.boxes.signle end
@@ -358,11 +130,16 @@ end
 ---`window.objects.close_button` fires "close"..title event.
 ---@param size2 tgl.Size2
 ---@param title? string Defaults to Untitled
----@param text? any 
+---@param text? string
 ---@param barcol? tgl.Color2 Color2 of topbar frame
 ---@param framecol? tgl.Color2 of window background
 ---@return tgl.Frame
 function tui.notificationWindow(size2,title,text,barcol,framecol)
+  checkArg(1,size2,"table","nil")
+  checkArg(2,title,"string","nil")
+  checkArg(3,text,"string","nil")
+  checkArg(4,barcol,"table","nil")
+  checkArg(5,framecol,"table","nil")
   if not size2 then return nil end
   if not title then title="Untitled" end
   if not text then text="Empty text" end
@@ -386,6 +163,11 @@ end
 ---@param margin? integer minimal margin from screen edges
 ---@return tgl.Size2
 function tui.autoSize2(minW, minH, maxW, maxH, margin)
+  checkArg(1,minW,"number")
+  checkArg(2,minH,"number")
+  checkArg(3,maxW,"number","nil")
+  checkArg(4,maxH,"number","nil")
+  checkArg(5,margin,"number","nil")
   margin=margin or 4   -- distance from edges
   local screenW=tgl.defaults.screenSizeX
   local screenH=tgl.defaults.screenSizeY
@@ -410,6 +192,8 @@ end
 ---@param targetSize2 tgl.Size2
 ---@return tgl.Size2
 function tui.centerSize2atSize2(size2,targetSize2)
+  checkArg(1,size2,"table","nil")
+  checkArg(2,targetSize2,"table","nil")
   if not size2 or not targetSize2 then return nil end
   local targetCenterX=(targetSize2.x1+targetSize2.x2)/2
   local targetCenterY=(targetSize2.y1+targetSize2.y2)/2
@@ -426,6 +210,8 @@ end
 ---@param pos2 tgl.Pos2
 ---@return tgl.Size2
 function tui.centerSize2atPos2(size2,pos2)
+  checkArg(1,size2,"table")
+  checkArg(2,pos2,"table")
   local sizeCenterX=(size2.x1+size2.x2)/2
   local sizeCenterY=(size2.y1+size2.y2)/2
   local offsetX=pos2.x-sizeCenterX
@@ -441,6 +227,10 @@ end
 ---@param allowFolder? boolean Allow selecting folders, default=false
 ---@return string|nil
 function tui.selectFile(size2,startFolder,startFile,allowFolder)
+  checkArg(1,size2,"table","nil")
+  checkArg(2,startFolder,"string","nil")
+  checkArg(3,startFile,"string","nil")
+  checkArg(4,allowFolder,"boolean","nil")
   local fs=require("filesystem")
   local current_dir=""
   local selected_file=startFile or ""
@@ -643,9 +433,6 @@ function tui.selectColor2Palette()
 
 end
 
---add new objects
-tgl.sys.enableTypes["CheckBox"]=true
-tgl.sys.enableTypes["DropdownMenu"]=true
 return tui
 --[[
 action window-> return result

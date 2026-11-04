@@ -25,12 +25,14 @@ tgl.Renderer.customCommands=true
 tgl.Renderer.__index=tgl.Renderer
 ---@param frequency number
 function tgl.Renderer:init(frequency)
+  checkArg(1,frequency,"number","string","nil")
   if type(tgl.sys.renderer)=="table" then
     tgl.util.log("Couldn't init new renderer - already present","Renderer")
     return
   end
   local obj=setmetatable({},self)
   obj.type="Renderer"
+  obj.events=tgl.Event:new()
   obj.gpu=require("component").gpu
   obj.queue={}
   obj.nextQueue={}
@@ -57,18 +59,19 @@ end
 
 function tgl.Renderer:start()
   if self.timer then return end
-  self.timer=event.timer(self.frameFreq,function()
+  self.timer=self.events:timer(self.frameFreq,function()
     if self.stopped then return end
     if self.dirty and not self.rendering then
       self:render()
     end
   end,math.huge)
-  event.listen("key_down",self.resetKeybind)
+  self.events:listen("key_down",self.resetKeybind)
 end
 function tgl.Renderer:stop() self.stopped=true end
 function tgl.Renderer:resume() self.stopped=false end
 ---Resume and immediately execute any queued commands.
 function tgl.Renderer:flush(buffered)
+  checkArg(1,buffered,"boolean","nil")
   if self.suspended then return end
   if buffered then self._buffered=true end
   if self._deferFlush then return end
@@ -79,6 +82,7 @@ function tgl.Renderer:flush(buffered)
 end
 ---Discard drawing while the host's display is off. The host must redraw on wake.
 function tgl.Renderer:setSuspended(value)
+  checkArg(1,value,"boolean")
   if self.rendering or self._deferFlush then return false end
   if value then
     self:flush()
@@ -96,8 +100,8 @@ function tgl.Renderer:setSuspended(value)
 end
 function tgl.Renderer:finish()
   if not self.timer then return false end
-  event.ignore("key_down",self.resetKeybind)
-  local ok=event.cancel(self.timer)
+  local ok=self.events:cancel(self.timer)
+  self.events:clear()
   self.timer=nil
   self.stopped=false
   self.suspended=false
@@ -109,19 +113,39 @@ function tgl.Renderer:finish()
   return ok
 end
 function tgl.Renderer:addCmd(cmd)
-  if type(cmd)~="table" then
-    tgl.util.log("Corrupted command add: "..type(cmd))
-    return false
-  end
+  checkArg(1,cmd,"table")
   if self.suspended then
     --Resource releases must still happen; drawing must not grow the queue.
     if cmd.cmd=="freebuffer" or cmd.cmd=="freebuffers" then return self:execCmd(cmd) end
     return true
   end
+  --Queue values, not the caller's mutable geometry/color objects.
+  local queued={}
+  for key,value in pairs(cmd) do queued[key]=value end
+  for _,key in ipairs({"pos2","size2","src","dst","bufpos2","col2","gradient","area"}) do
+    local value=queued[key]
+    if type(value)=="table" then
+      local copy=setmetatable({},getmetatable(value))
+      for field,item in pairs(value) do
+        if type(item)~="table" then copy[field]=item end
+      end
+      for _,field in ipairs({"pos1","pos2"}) do
+        if type(value[field])=="table" then
+          local point=setmetatable({},getmetatable(value[field]))
+          for name,item in pairs(value[field]) do point[name]=item end
+          copy[field]=point
+        end
+      end
+      queued[key]=copy
+    end
+  end
+  cmd=queued
   if not cmd.z_index then cmd.z_index=0 end
   if not cmd.buffer then cmd.buffer=0 end
   if cmd.cmd=="bufcopy" then cmd.buffer=nil end
-  cmd.clipRegion=self.clipRegion
+  local clip=self.clipRegion
+  cmd.clipRegion=nil
+  if clip then cmd.clipRegion={x1=clip.x1,y1=clip.y1,x2=clip.x2,y2=clip.y2} end
   self.frameCounter=self.frameCounter+1
   cmd.order=self.frameCounter
   if not self.rendering then
@@ -138,10 +162,10 @@ function tgl.Renderer:execCmd(cmd)
   if not cmd.cmd then return false end
   -- Reject invisible draws before switching buffers or issuing GPU color calls.
   local clip=cmd.clipRegion
-  if clip and cmd.cmd=="fill" then
+  if clip and (cmd.cmd=="fill" or cmd.cmd=="gradient") then
     local s=cmd.size2
     if s.x2<clip.x1 or s.x1>clip.x2 or s.y2<clip.y1 or s.y1>clip.y2 then return true end
-  elseif clip and cmd.cmd=="set" then
+  elseif clip and (cmd.cmd=="set" or cmd.cmd=="gradienttext") then
     local x,y=cmd.pos2.x,cmd.pos2.y
     if not cmd.vertical then
       if y<clip.y1 or y>clip.y2 or x>clip.x2
@@ -161,7 +185,7 @@ function tgl.Renderer:execCmd(cmd)
       end
     end
   end
-  if cmd.col2 then tgl.changeToColor2(cmd.col2,true) end
+  if cmd.col2 and cmd.cmd~="gradient" and cmd.cmd~="gradienttext" then tgl.changeToColor2(cmd.col2,true) end
   if cmd.cmd=="set" then
     local x,y=cmd.pos2.x,cmd.pos2.y
     local value=cmd.value
@@ -232,12 +256,68 @@ function tgl.Renderer:execCmd(cmd)
       end
     end
     return ok
-  elseif cmd.cmd=="copy" then
-    return self.gpu.copy(cmd.src.x1,cmd.src.y1,cmd.src.sizeX,cmd.src.sizeY,cmd.dst.x,cmd.dst.y)
-  elseif cmd.cmd=="bufcopy" then
-    local dst=cmd.dst==0 and self._drawBuffer or cmd.dst
-    local src=cmd.src==0 and self._drawBuffer or cmd.src
-    return self.gpu.bitblt(dst,cmd.size2.x1,cmd.size2.y1,cmd.size2.sizeX,cmd.size2.sizeY,src,cmd.bufpos2.x,cmd.bufpos2.y)
+  elseif cmd.cmd=="copy" or cmd.cmd=="bufcopy" then
+    local screen=cmd.cmd=="copy" and cmd.buffer==0 or cmd.cmd=="bufcopy" and cmd.dst==0
+    local dx,dy,sx,sy,w,h
+    if cmd.cmd=="copy" then
+      sx,sy=cmd.src.x1,cmd.src.y1
+      dx,dy=sx+cmd.dst.x,sy+cmd.dst.y
+      w,h=cmd.src.sizeX,cmd.src.sizeY
+    else
+      dx,dy=cmd.size2.x1,cmd.size2.y1
+      sx,sy=cmd.bufpos2.x,cmd.bufpos2.y
+      w,h=cmd.size2.sizeX,cmd.size2.sizeY
+    end
+    local left,top=dx,dy
+    local right,bottom=dx+w-1,dy+h-1
+    --Buffer-local copies use buffer coordinates, not a screen-space clip.
+    if screen then
+      left,top=math.max(left,1),math.max(top,1)
+      right,bottom=math.min(right,self._sw),math.min(bottom,tgl.defaults.screenSizeY)
+      if clip then
+        left,top=math.max(left,clip.x1),math.max(top,clip.y1)
+        right,bottom=math.min(right,clip.x2),math.min(bottom,clip.y2)
+      end
+    end
+    if left>right or top>bottom then return true end
+    sx,sy=sx+left-dx,sy+top-dy
+    w,h=right-left+1,bottom-top+1
+    local ok
+    if cmd.cmd=="copy" then
+      ok=self.gpu.copy(sx,sy,w,h,left-sx,top-sy)
+    else
+      local dst=cmd.dst==0 and self._drawBuffer or cmd.dst
+      local src=cmd.src==0 and self._drawBuffer or cmd.src
+      ok=self.gpu.bitblt(dst,left,top,w,h,src,sx,sy)
+    end
+    if ok and screen then
+      local x1,x2,stepX=0,w-1,1
+      local y1,y2,stepY=0,h-1,1
+      --Match overlapping copies without allocating another per-cell table.
+      if cmd.cmd=="copy" then
+        if left>sx then x1,x2,stepX=w-1,0,-1 end
+        if top>sy then y1,y2,stepY=h-1,0,-1 end
+      end
+      for y=y1,y2,stepY do
+        for x=x1,x2,stepX do
+          local z=cmd.z_index or 0
+          if cmd.cmd=="copy" then z=self:getZ(sx+x,sy+y)
+          elseif cmd.savedZ then
+            local row=cmd.savedZ[sy+y]
+            if row then z=string.unpack(">d",row,(sx+x-1)*8+1) end
+          end
+          self._zbuf[(top+y-1)*self._sw+left+x]=z
+        end
+      end
+    end
+    return ok
+  elseif cmd.cmd=="savez" then
+    for y=cmd.size2.y1,cmd.size2.y2 do
+      local row={}
+      for x=cmd.size2.x1,cmd.size2.x2 do row[#row+1]=string.pack(">d",self:getZ(x,y)) end
+      cmd.savedZ[y-cmd.size2.y1+1]=table.concat(row)
+    end
+    return true
   elseif cmd.cmd=="reset" then
     tgl.changeToColor2(cmd.col2)
     self.gpu.setActiveBuffer(0)
@@ -283,12 +363,12 @@ local function presentationRegion(renderer)
   local region=nil
   for _,cmd in ipairs(renderer.queue) do
     if cmd.buffer==0 or (cmd.cmd=="bufcopy" and (cmd.src==0 or cmd.dst==0)) then
-      if cmd.cmd~="set" and cmd.cmd~="fill" then
+      if cmd.cmd~="set" and cmd.cmd~="fill" and cmd.cmd~="gradient" and cmd.cmd~="gradienttext" then
         return {x1=1,y1=1,x2=sw,y2=sh}
       end
       local clip=cmd.clipRegion
       if not clip then
-        if cmd.cmd=="fill" then clip=cmd.size2
+        if cmd.cmd=="fill" or cmd.cmd=="gradient" then clip=cmd.size2
         else
           local x,y=cmd.pos2.x,cmd.pos2.y
           clip={x1=x,y1=y,x2=x+unicode.wlen(cmd.value)-1,
@@ -382,10 +462,13 @@ end
 ---@param buf? integer
 ---@return boolean
 function tgl.Renderer:setPoint(x,y,value,col2,z_index,vertical,buf)
-  if type(x)~="number" or type(y)~="number" or not value then
-    tgl.util.log("Illegal setPoint command: x="..tostring(x).." y="..tostring(y).." "..tostring(value),"Renderer")
-    return false
-  end
+  checkArg(1,x,"number")
+  checkArg(2,y,"number")
+  checkArg(3,value,"string")
+  checkArg(4,col2,"table","nil")
+  checkArg(5,z_index,"number","nil")
+  checkArg(6,vertical,"boolean","nil")
+  checkArg(7,buf,"number","nil")
   self:addCmd({cmd="set",pos2=tgl.Pos2:new(x,y),value=value,col2=col2,z_index=z_index or 0,vertical=vertical,buffer=buf})
   return true
 end
@@ -399,10 +482,12 @@ end
 ---@param buf? integer 
 ---@return boolean
 function tgl.Renderer:set(pos2,text,col2,z_index,vertical,buf)
-  if type(pos2)~="table" or not text then
-    tgl.util.log("Illegal text command: pos2.type="..type(pos2).." "..tostring(text),"Renderer")
-    return false
-  end
+  checkArg(1,pos2,"table")
+  checkArg(2,text,"string")
+  checkArg(3,col2,"table","nil")
+  checkArg(4,z_index,"number","nil")
+  checkArg(5,vertical,"boolean","nil")
+  checkArg(6,buf,"number","nil")
   self:addCmd({cmd="set",pos2=pos2,value=text,col2=col2,z_index=z_index,vertical=vertical,buffer=buf})
   return true
 end
@@ -415,11 +500,12 @@ end
 ---@param buf? integer
 ---@return boolean
 function tgl.Renderer:fill(size2,char,col2,z_index,buf)
+  checkArg(1,size2,"table")
+  checkArg(2,char,"string","nil")
+  checkArg(3,col2,"table","nil")
+  checkArg(4,z_index,"number","nil")
+  checkArg(5,buf,"number","nil")
   if not char then char=" " end
-  if type(size2)~="table" or type(char)~="string" then
-    tgl.util.log("Illegal fill command: size2.type="..type(size2).." c="..tostring(char),"Renderer")
-    return false
-  end
   self:addCmd({cmd="fill",size2=size2,char=char,col2=col2,z_index=z_index,buffer=buf})
   return true
 end
@@ -432,10 +518,11 @@ end
 ---@param z_index? integer
 ---@return boolean
 function tgl.Renderer:bufcopy(src,dst,copySize2,z_index,bufpos2)
-  if type(src)~="number" or type(dst)~="number" or type(copySize2)~="table" then
-    tgl.util.log("Illegal buffer copy(bitblt)","Renderer")
-    return false
-  end
+  checkArg(1,src,"number")
+  checkArg(2,dst,"number")
+  checkArg(3,copySize2,"table")
+  checkArg(4,z_index,"number","nil")
+  checkArg(5,bufpos2,"table","nil")
   if not bufpos2 then bufpos2=tgl.Pos2:new(1,1) end
   self:addCmd({cmd="bufcopy",src=src,dst=dst,size2=copySize2,bufpos2=bufpos2,z_index=z_index})
   return true
@@ -447,10 +534,9 @@ end
 ---@param buf? integer
 ---@return boolean
 function tgl.Renderer:copy(src_size2,dst_pos2,buf)
-  if type(src_size2)~="table" or type(dst_pos2)~="table" then 
-    tgl.util.log("Illegal copy command: src_size2.type="..type(src_size2).." dst_pos2.type="..type(dst_pos2),"Renderer")
-    return false
-  end
+  checkArg(1,src_size2,"table")
+  checkArg(2,dst_pos2,"table")
+  checkArg(3,buf,"number","nil")
   self:addCmd({cmd="copy",src=src_size2,dst=dst_pos2,buffer=buf})
   return true
 end
@@ -460,9 +546,9 @@ end
 ---@return string
 ---@return tgl.Color2
 function tgl.Renderer:get(pos2,buf)
-  if type(pos2)~="table" then
-    return nil,nil
-  end
+  checkArg(1,pos2,"table","nil")
+  checkArg(2,buf,"number","nil")
+  if not pos2 then return nil,nil end
   if buf then
     if not self:hasBuffer(buf) then
       tgl.util.log("Getting from nil buffer: "..buf,"Renderer")
@@ -482,13 +568,15 @@ end
 ---@param y integer
 ---@return integer
 function tgl.Renderer:getZ(x,y)
+  checkArg(1,x,"number")
+  checkArg(2,y,"number")
   return self._zbuf[(y-1)*self._sw+x] or 0
 end
 
 function tgl.Renderer:getPoint(x,y,buf)
-  if type(x)~="number" or type(y)~="number" then
-    return nil,nil
-  end
+  checkArg(1,x,"number")
+  checkArg(2,y,"number")
+  checkArg(3,buf,"number","nil")
   if buf then
     if not self:hasBuffer(buf) then
       tgl.util.log("Getting from nil buffer: "..buf,"Renderer")
@@ -510,11 +598,9 @@ end
 ---@param sizeY integer
 ---@return boolean,integer|nil
 function tgl.Renderer:allocateBuffer(sizeX,sizeY)
+  checkArg(1,sizeX,"number")
+  checkArg(2,sizeY,"number")
   if self.suspended then return false end
-  if type(sizeX)~="number" or type(sizeY)~="number" then
-    tgl.util.log("Unvalid buffer allocation: "..tostring(sizeX).." x "..tostring(sizeY),"Renderer")
-    return false
-  end
   local size=sizeX*sizeY
   if self.gpu.freeMemory()<size then
     tgl.util.log("Couldn't allocate buffer: free="..self.gpu.freeMemory().." requested="..size,"Renderer")
@@ -527,6 +613,7 @@ end
 ---@param id integer
 ---@return boolean
 function tgl.Renderer:freeBuffer(id)
+  checkArg(1,id,"number")
   if id>0 and self:hasBuffer(id) then
     self:addCmd({cmd="freebuffer",id=id})
     return true
@@ -535,6 +622,7 @@ function tgl.Renderer:freeBuffer(id)
 end
 
 function tgl.Renderer:setBuffer(id)
+  checkArg(1,id,"number")
   if id>=0 and self:hasBuffer(id) then
     self:addCmd({cmd="setbuffer",id=id})
     return true
@@ -545,6 +633,7 @@ end
 
 ---Buffer indexes are values in gpu.buffers(), not table keys.
 function tgl.Renderer:hasBuffer(id)
+  checkArg(1,id,"number")
   if id==0 then return true end
   for _,buf in ipairs(self.gpu.buffers()) do
     if buf==id then return true end
@@ -561,12 +650,14 @@ function tgl.Renderer:freeAllBuffers()
 end
 
 function tgl.Renderer:resetCursor(col2)
+  checkArg(1,col2,"table","nil")
   self:addCmd({cmd="reset",col2=col2 or tgl.defaults.colors2.black})
 end
 
 ---Set clipping region for rendering
 ---@param size2? tgl.Size2 nil to disable clipping
 function tgl.Renderer:setClipRegion(size2)
+  checkArg(1,size2,"table","nil")
   self.clipRegion=size2
 end
 
@@ -574,6 +665,24 @@ end
 ---@return tgl.Size2|nil
 function tgl.Renderer:getClipRegion()
   return self.clipRegion
+end
+
+---Intersect a temporary clip with the caller's clip, restoring it even on error.
+function tgl.Renderer:withClip(size2,draw,...)
+  checkArg(1,size2,"table")
+  checkArg(2,draw,"function")
+  local previous=self.clipRegion
+  local clip={type="Size2",x1=size2.x1,y1=size2.y1,x2=size2.x2,y2=size2.y2}
+  if previous then
+    clip.x1=math.max(clip.x1,previous.x1) clip.y1=math.max(clip.y1,previous.y1)
+    clip.x2=math.min(clip.x2,previous.x2) clip.y2=math.min(clip.y2,previous.y2)
+  end
+  if clip.x1>clip.x2 or clip.y1>clip.y2 then return false end
+  self.clipRegion=clip
+  local result=table.pack(pcall(draw,...))
+  self.clipRegion=previous
+  if not result[1] then error(result[2],0) end
+  return table.unpack(result,2,result.n)
 end
 
 return tgl end

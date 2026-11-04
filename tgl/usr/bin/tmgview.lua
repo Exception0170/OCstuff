@@ -45,7 +45,7 @@ local function view(filename)
   end,debug.traceback)
   if img then img:unload() end
   r:flush()
-  if ownsRenderer then r:finish() end
+  if ownsRenderer then tgl.finish() end
   if inline then
     tgl.changeToColor2(color)
     if nextRow then term.setCursor(1,nextRow) end

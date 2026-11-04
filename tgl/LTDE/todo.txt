@@ -308,6 +308,9 @@ shutdown routine (in core.lua)
     [ ] ltwm composites app buffer into the managed window on renderAll
 
 =[ V2: Desktop with Icons ]=
+  [ ] Unicode icons for window buttons, taskbar, Explorer and other UI
+        - account for OpenComputers glyphs occupying two screen cells
+        - examples: 🗕🗙🗔🗀🗁🗄🖹🖻🖴🖫🗒🖳🖵🖧🖥🕪🕩🕨🕭🕮🗘🗹🗷🗍🔗
   [ ] desktop icons: scan /ltde/apps/*.app, render icon grid with labels
   [ ] double-click icon -> launch app
   [ ] tgl-img / tmg icon support: .app bundle includes icon.tmg

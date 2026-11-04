@@ -53,4 +53,5 @@ tgl.defaults.colors2.black=tgl.Color2:new(0xFFFFFF,0)
 tgl.defaults.colors2.white=tgl.Color2:new(0,0xFFFFFF)
 tgl.defaults.colors2.close=tgl.Color2:new(0xFFFFFF,tgl.defaults.colors16.red)
 tgl.defaults.colors2.progressbar=tgl.Color2:new(tgl.defaults.colors16.lime,0xFFFFFF)
+tgl.defaults.colors2.focus=tgl.Color2:new(tgl.defaults.colors16.black,tgl.defaults.colors16.gold)
 return tgl end
